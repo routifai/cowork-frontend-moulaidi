@@ -1,0 +1,29 @@
+/node_modules
+/dist
+/.cache
+/.tmp
+*.log
+.DS_Store
+.env
+.env.local
+src-tauri/agent-sidecar
+
+# This repo is pnpm-only (pnpm-lock.yaml is the source of truth) — an
+# npm-generated package-lock.json anywhere is accidental, never intentional.
+package-lock.json
+# Cargo build artifacts
+/target
+/src-tauri/target
+/src-tauri/gen
+# Bundled node/git/gh/npm binaries — fetched/stubbed at build/dev time by
+# src-tauri/scripts/fetch-*.mjs and scripts/ensure-dev-resources.mjs.
+/src-tauri/binaries
+*.tsbuildinfo
+/coverage
+/playwright-report
+/test-results
+.claude/
+.pi/
+
+# Embedded Anthropic API key (injected into the sidecar bundle at build time; not committed)
+anthropic-api-key
