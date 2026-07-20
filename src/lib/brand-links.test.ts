@@ -7,7 +7,9 @@ describe("BRAND_LINKS", () => {
 	});
 
 	it("points new-issue at the GitHub issue template chooser", () => {
-		expect(BRAND_LINKS.newIssue).toBe("https://github.com/hypatiai/hypatia-cowork/issues/new/choose");
+		expect(BRAND_LINKS.newIssue).toBe(
+			"https://github.com/hypatiai/hypatia-cowork/issues/new/choose",
+		);
 	});
 
 	it("every link is an absolute https URL", () => {

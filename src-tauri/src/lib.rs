@@ -1128,6 +1128,70 @@ async fn save_instructions(content: String, s: State<'_, AppState>) -> Result<Va
     .await
 }
 
+// ── Memory commands ───────────────────────────────────────────────
+
+#[tauri::command]
+async fn get_memory_index(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("gmi-{}", next_request_id());
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"get_memory_index","id":id}),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn get_memory_note(topic: String, s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("gmn-{}", next_request_id());
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"get_memory_note","id":id,"topic":topic}),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn save_memory_note(
+    topic: String,
+    summary: String,
+    memory_type: Option<String>,
+    detail: Option<String>,
+    note_content: Option<String>,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("smn-{}", next_request_id());
+    let mut payload = serde_json::json!({
+        "type": "save_memory_note",
+        "id": id,
+        "topic": topic,
+        "summary": summary,
+    });
+    if let Some(mt) = memory_type {
+        payload["memoryType"] = Value::String(mt);
+    }
+    if let Some(d) = detail {
+        payload["detail"] = Value::String(d);
+    }
+    if let Some(nc) = note_content {
+        payload["noteContent"] = Value::String(nc);
+    }
+    // save_memory_note can trigger session.reload() in the sidecar; allow more headroom.
+    scmd_r(&s, &payload, std::time::Duration::from_secs(30)).await
+}
+
+#[tauri::command]
+async fn delete_memory_topic(topic: String, s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("dmt-{}", next_request_id());
+    scmd_r(
+        &s,
+        &serde_json::json!({"type":"delete_memory_topic","id":id,"topic":topic}),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+}
+
 // ── Extension commands ────────────────────────────────────────────
 
 #[tauri::command]
@@ -1429,6 +1493,10 @@ pub fn run() {
             save_settings,
             get_instructions,
             save_instructions,
+            get_memory_index,
+            get_memory_note,
+            save_memory_note,
+            delete_memory_topic,
             list_extensions,
             search_skills,
             write_user_file,

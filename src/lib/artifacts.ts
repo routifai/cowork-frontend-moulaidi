@@ -67,6 +67,20 @@ export function detectArtifactType(filePath: string): ArtifactType {
 }
 
 /**
+ * Encode SVG content as an `<img>`-safe data URI. Per spec, browsers never
+ * execute embedded `<script>` tags or event-handler attributes for SVG
+ * loaded via `<img>` — unlike raw `innerHTML`, which runs them in the
+ * main-frame context. This is the standard, dependency-free way to render
+ * untrusted SVG safely (see ArtifactPreview.tsx, which used to do
+ * `innerHTML = svgContent` directly — a real XSS risk once SVG content
+ * could come from an arbitrary pre-existing file, not just one the agent
+ * just wrote).
+ */
+export function svgToImgSrc(svgContent: string): string {
+	return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgContent)}`;
+}
+
+/**
  * Extract directory path from a file path for "Open folder" action.
  */
 export function parentDir(filePath: string): string {

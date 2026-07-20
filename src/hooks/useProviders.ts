@@ -1,8 +1,8 @@
 import type { ModelInfo } from "@/types";
-import { log } from "../lib/log";
 import { invoke } from "@tauri-apps/api/core";
 import { type UnlistenFn, listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { log } from "../lib/log";
 
 export function useProviders() {
 	const [models, setModels] = useState<ModelInfo[]>([]);

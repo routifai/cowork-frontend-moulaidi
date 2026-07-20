@@ -547,7 +547,8 @@ function SessionRow({
 					transition={{ duration: 0.12, ease: [0.16, 1, 0.3, 1] }}
 				>
 					{/* Title */}
-					<span className={`flex items-center gap-1 text-[12px] truncate leading-snug ${isActive ? "font-semibold text-foreground" : "font-medium text-foreground/80"}`}
+					<span
+						className={`flex items-center gap-1 text-[12px] truncate leading-snug ${isActive ? "font-semibold text-foreground" : "font-medium text-foreground/80"}`}
 					>
 						{session.pinned && (
 							<Pin className="w-2.5 h-2.5 shrink-0 text-primary/70" fill="currentColor" />
@@ -558,7 +559,9 @@ function SessionRow({
 					{/* Folder path — only for Pinned rows, which can mix folders. Grouped
 					    rows already sit under a folder-labeled group header. */}
 					{showFolder && (
-						<span className="flex items-center gap-1 mt-0.5 text-[10px] truncate text-muted-foreground/50" title={session.folder || path}
+						<span
+							className="flex items-center gap-1 mt-0.5 text-[10px] truncate text-muted-foreground/50"
+							title={session.folder || path}
 						>
 							<Folder className="w-2.5 h-2.5 shrink-0" />
 							<span className="truncate">{path}</span>

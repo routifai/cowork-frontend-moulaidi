@@ -454,12 +454,7 @@ describe("streamReducer — delivered steer/follow-up become bubbles", () => {
 			{ type: "STREAM_COMPLETE" },
 		]);
 		// prompt(user) + assistant-part-1 + steer(user) + assistant-part-2 = 4
-		expect(state.messages.map((m) => m.role)).toEqual([
-			"user",
-			"assistant",
-			"user",
-			"assistant",
-		]);
+		expect(state.messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"]);
 		expect(state.messages[0].content).toBe("do a thing");
 		expect(state.messages[1].content).toBe("working on it");
 		expect(state.messages[2].content).toBe("use TS instead");

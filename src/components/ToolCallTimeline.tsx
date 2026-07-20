@@ -22,14 +22,24 @@ import { ArtifactPreview } from "./ArtifactPreview";
 interface ToolCallTimelineProps {
 	toolCalls: ToolCallInfo[];
 	detailsExpanded?: boolean;
+	onOpenArtifact?: (id: string) => void;
 }
 
-export function ToolCallTimeline({ toolCalls, detailsExpanded }: ToolCallTimelineProps) {
+export function ToolCallTimeline({
+	toolCalls,
+	detailsExpanded,
+	onOpenArtifact,
+}: ToolCallTimelineProps) {
 	if (toolCalls.length === 0) return null;
 	return (
 		<div className="flex flex-col gap-1 my-1.5">
 			{toolCalls.map((tc) => (
-				<ToolCallBlock key={tc.id} toolCall={tc} detailsExpanded={detailsExpanded} />
+				<ToolCallBlock
+					key={tc.id}
+					toolCall={tc}
+					detailsExpanded={detailsExpanded}
+					onOpenArtifact={onOpenArtifact}
+				/>
 			))}
 		</div>
 	);
@@ -40,7 +50,8 @@ export function ToolCallTimeline({ toolCalls, detailsExpanded }: ToolCallTimelin
 function ToolCallBlock({
 	toolCall,
 	detailsExpanded,
-}: { toolCall: ToolCallInfo; detailsExpanded?: boolean }) {
+	onOpenArtifact,
+}: { toolCall: ToolCallInfo; detailsExpanded?: boolean; onOpenArtifact?: (id: string) => void }) {
 	const [localExpanded, setLocalExpanded] = useState(false);
 	const isRunning = toolCall.status === "running";
 	const isError = toolCall.status === "error";
@@ -64,6 +75,9 @@ function ToolCallBlock({
 	const artifactPath = extractWriteFilePath(toolCall);
 	const artifact = useArtifactLoader(artifactPath);
 
+	const isShowArtifact = toolCall.name === "show_artifact";
+	const artifactId = isShowArtifact ? str(toolCall.args.id) : undefined;
+
 	return (
 		<div
 			className="text-xs font-mono"
@@ -72,11 +86,19 @@ function ToolCallBlock({
 				borderLeft: `2px solid ${accentColor}`,
 			}}
 		>
-			{/* Header line */}
+			{/* Header line — for show_artifact there's nothing to expand (ToolContent
+			    always returns null for it), so the click opens the playground panel
+			    on that artifact instead of toggling local expand/collapse. */}
 			<button
 				type="button"
 				className="flex items-center gap-1.5 px-2 pt-1.5 pb-0.5 w-full text-left cursor-pointer select-none"
-				onClick={() => setLocalExpanded(!localExpanded)}
+				onClick={() => {
+					if (isShowArtifact && artifactId) {
+						onOpenArtifact?.(artifactId);
+						return;
+					}
+					setLocalExpanded(!localExpanded);
+				}}
 			>
 				{isRunning ? (
 					<Loader2 className="w-3 h-3 animate-spin flex-shrink-0" style={{ color: accentColor }} />
@@ -86,8 +108,11 @@ function ToolCallBlock({
 					<Check className="w-3 h-3 flex-shrink-0" style={{ color: accentColor }} />
 				)}
 				<span className="opacity-90 flex-1">{header}</span>
-				{!showContent && !isRunning && (
-					<span className="text-[10px] opacity-40 flex-shrink-0">Ctrl+O</span>
+				{isShowArtifact && artifactId && !isRunning ? (
+					<span className="text-[10px] opacity-40 flex-shrink-0">Click to view</span>
+				) : (
+					!showContent &&
+					!isRunning && <span className="text-[10px] opacity-40 flex-shrink-0">Ctrl+O</span>
 				)}
 			</button>
 
@@ -127,6 +152,18 @@ function buildHeader(tc: ToolCallInfo): { header: string; statusLine?: string } 
 	const args = tc.args;
 
 	switch (tc.name) {
+		case "save_memory": {
+			const topic = str(args.topic) || "";
+			const summary = str(args.summary) || "";
+			return { header: `📝 remembered: "${topic}" — ${summary}` };
+		}
+
+		case "show_artifact": {
+			const title = str(args.title) || str(args.id) || "";
+			const type = str(args.type) || "";
+			return { header: `→ shown in playground: "${title}" (${type})` };
+		}
+
 		case "write": {
 			const path = str(args.path) || str(args.file_path) || "";
 			const content = str(args.content) || "";
@@ -242,6 +279,17 @@ function ToolContent({ toolCall }: { toolCall: ToolCallInfo }) {
 		return null;
 	}
 
+	// show_artifact — full content lives in the playground panel only; never
+	// expand it inline here (that's the whole point of the compact card).
+	if (toolCall.name === "show_artifact") {
+		return null;
+	}
+
+	// save_memory — header only, no inline content.
+	if (toolCall.name === "save_memory") {
+		return null;
+	}
+
 	// Edit/write with diff — pi-mono returns diff in details.diff
 	if (toolCall.name === "edit" || toolCall.name === "write") {
 		const diffText = typeof toolCall.details?.diff === "string" ? toolCall.details.diff : "";
@@ -275,6 +323,10 @@ function ToolContent({ toolCall }: { toolCall: ToolCallInfo }) {
 /** Human-readable label for a running tool */
 function getRunningLabel(toolName: string): string {
 	switch (toolName) {
+		case "save_memory":
+			return "Remembering...";
+		case "show_artifact":
+			return "Preparing preview...";
 		case "write":
 			return "Writing...";
 		case "edit":
@@ -436,7 +488,7 @@ function collapseContext(hunk: DiffLine[]): DiffLine[] {
 	return result;
 }
 
-function SplitDiff({ diffText }: { diffText: string }) {
+export function SplitDiff({ diffText }: { diffText: string }) {
 	const { hunks, isNewFile } = parseUnifiedDiff(diffText);
 	if (hunks.length === 0) return null;
 

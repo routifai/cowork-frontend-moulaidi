@@ -7,8 +7,10 @@ import { useCallback, useState } from "react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ActivityBlock, ActivityRecap } from "./ActivityBlock";
+import { ArtifactChips } from "./ArtifactChips";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { markdownComponents } from "./MarkdownComponents";
+import { MemoryChips } from "./MemoryChip";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallSummary, ToolCallTimeline } from "./ToolCallTimeline";
 
@@ -21,6 +23,11 @@ interface ChatMessageProps {
 	findTerm?: string;
 	/** Index (within THIS message) of the occurrence to mark active, if any. */
 	activeFindIndex?: number;
+	/** Opens the playground panel on a specific artifact id — wired from a
+	 * show_artifact chip below, regardless of which activity view is showing. */
+	onOpenArtifact?: (id: string) => void;
+	/** Opens Settings → Memory — wired from a save_memory chip below. */
+	onOpenSettings?: () => void;
 }
 
 /**
@@ -49,6 +56,8 @@ export function ChatMessageItem({
 	models,
 	findTerm,
 	activeFindIndex,
+	onOpenArtifact,
+	onOpenSettings,
 }: ChatMessageProps) {
 	const [copied, setCopied] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -157,7 +166,9 @@ export function ChatMessageItem({
 				<div className="flex-1 min-w-0">
 					{/* Header row */}
 					<div className="flex items-center gap-2 mb-0.5">
-						<span className="text-xs font-medium text-foreground">{isUser ? "You" : "Hypatia"}</span>
+						<span className="text-xs font-medium text-foreground">
+							{isUser ? "You" : "Hypatia"}
+						</span>
 						<span className="text-[10px] text-muted-foreground tabular-nums">
 							{new Date(message.timestamp).toLocaleTimeString([], {
 								hour: "2-digit",
@@ -167,8 +178,7 @@ export function ChatMessageItem({
 						{/* Delivered steer/follow-up user messages (injected mid-run by
 					    the SDK) carry a kind so the transcript shows what routed the
 					    turn. Live queued items still render inline via ChatView. */}
-						{(message.kind === "queued-steer" ||
-							message.kind === "queued-follow-up") && (
+						{(message.kind === "queued-steer" || message.kind === "queued-follow-up") && (
 							<span className="text-[10px] font-medium text-status-active-fg bg-status-active-bg/40 px-1.5 py-0 rounded">
 								{message.kind === "queued-steer" ? "Steering" : "Follow-up"}
 							</span>
@@ -209,12 +219,26 @@ export function ChatMessageItem({
 						message.toolCalls &&
 						message.toolCalls.length > 0 &&
 						(detailsExpanded ? (
-							<ToolCallTimeline toolCalls={message.toolCalls} detailsExpanded={detailsExpanded} />
+							<ToolCallTimeline
+								toolCalls={message.toolCalls}
+								detailsExpanded={detailsExpanded}
+								onOpenArtifact={onOpenArtifact}
+							/>
 						) : message.isStreaming ? (
 							<ActivityBlock toolCalls={message.toolCalls} active />
 						) : (
 							<ActivityRecap toolCalls={message.toolCalls} />
 						))}
+
+					{/* Artifact chips — shown in every view mode above (streaming,
+					    recap, expanded) so a show_artifact call is always reachable
+					    from the transcript, not just behind Ctrl+O. */}
+					{!isUser && onOpenArtifact && (
+						<ArtifactChips toolCalls={message.toolCalls} onOpen={onOpenArtifact} />
+					)}
+					{!isUser && onOpenSettings && (
+						<MemoryChips toolCalls={message.toolCalls} onOpen={onOpenSettings} />
+					)}
 
 					{/* Content */}
 					{(message.content || message.isStreaming) && (

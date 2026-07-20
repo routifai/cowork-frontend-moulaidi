@@ -1,5 +1,4 @@
-import { type ArtifactType, parentDir } from "@/lib/artifacts";
-import { useEffect, useRef } from "react";
+import { type ArtifactType, parentDir, svgToImgSrc } from "@/lib/artifacts";
 
 interface ArtifactPreviewProps {
 	filePath: string;
@@ -17,13 +16,6 @@ export function ArtifactPreview({
 	onCopyPath,
 }: ArtifactPreviewProps) {
 	const fileName = filePath.split("/").pop() || filePath;
-	const svgContainerRef = useRef<HTMLDivElement>(null);
-
-	useEffect(() => {
-		if (artifactType === "svg" && svgContainerRef.current) {
-			svgContainerRef.current.innerHTML = fileContent;
-		}
-	}, [artifactType, fileContent]);
 
 	return (
 		<div className="mt-2 rounded-lg border overflow-hidden border-border bg-card">
@@ -61,10 +53,15 @@ export function ArtifactPreview({
 				)}
 				{artifactType === "svg" && (
 					<div
-						ref={svgContainerRef}
 						className="p-3 flex items-center justify-center"
 						style={{ minHeight: 100, background: "white" }}
-					/>
+					>
+						<img
+							src={svgToImgSrc(fileContent)}
+							alt={fileName}
+							className="max-w-full max-h-[350px] object-contain"
+						/>
+					</div>
 				)}
 				{artifactType === "image" && (
 					<div

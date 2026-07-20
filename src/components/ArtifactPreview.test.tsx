@@ -17,17 +17,23 @@ describe("ArtifactPreview", () => {
 		expect(screen.getByText("test.html")).toBeInTheDocument();
 	});
 
-	it("renders SVG inline", () => {
+	it("renders SVG via an <img> data URI, never raw innerHTML (security: a script-laced SVG must not execute)", () => {
+		const maliciousSvg =
+			'<svg xmlns="http://www.w3.org/2000/svg"><script>window.__pwned = true;</script><circle cx="10" cy="10" r="5"/></svg>';
 		const { container } = render(
-			<ArtifactPreview
-				filePath="/tmp/logo.svg"
-				fileContent='<svg xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="5"/></svg>'
-				artifactType="svg"
-			/>,
+			<ArtifactPreview filePath="/tmp/logo.svg" fileContent={maliciousSvg} artifactType="svg" />,
 		);
 		expect(screen.getByText("logo.svg")).toBeInTheDocument();
-		const svgEl = container.querySelector("svg");
-		expect(svgEl).toBeInTheDocument();
+		// No live <svg>/<script> node in the DOM — it's inside an <img> src, never parsed as markup.
+		expect(container.querySelector("svg")).not.toBeInTheDocument();
+		expect(container.querySelector("script")).not.toBeInTheDocument();
+		const img = container.querySelector("img");
+		expect(img).toBeInTheDocument();
+		expect(img).toHaveAttribute(
+			"src",
+			expect.stringMatching(/^data:image\/svg\+xml;charset=utf-8,/),
+		);
+		expect(decodeURIComponent(img?.getAttribute("src")?.split(",")[1] ?? "")).toBe(maliciousSvg);
 	});
 
 	it("renders image preview with alt text", () => {

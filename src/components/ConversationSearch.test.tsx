@@ -296,9 +296,7 @@ describe("ConversationSearch — folder grouping", () => {
 				activeWorkspace="/Users/simo/hypatia-cowork"
 			/>,
 		);
-		const headers = screen
-			.getAllByRole("button", { expanded: true })
-			.map((b) => b.textContent);
+		const headers = screen.getAllByRole("button", { expanded: true }).map((b) => b.textContent);
 		const coworkIdx = headers.findIndex((t) => t?.includes("/Users/simo/hypatia-cowork"));
 		const harnessIdx = headers.findIndex((t) => t?.includes("/Users/simo/harness"));
 		// harness has the more recent session (timestamp 3000) but cowork is the

@@ -105,3 +105,4 @@ export interface ZemExtension {
 }
 
 export * from "./pi-events";
+export * from "./playground";

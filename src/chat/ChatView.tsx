@@ -37,6 +37,8 @@ interface ChatViewProps {
 	queue?: { steering: readonly string[]; followUp: readonly string[] };
 	/** Issue #201, PR 3 — user pressed Ctrl+↑ to edit the pending queue. */
 	onEditQueue?: () => void;
+	/** Opens the playground panel on a specific artifact id, from a chat message's show_artifact chip. */
+	onOpenArtifact?: (id: string) => void;
 }
 
 export function ChatView({
@@ -60,6 +62,7 @@ export function ChatView({
 	onFollowUp,
 	queue,
 	onEditQueue,
+	onOpenArtifact,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -252,6 +255,7 @@ export function ChatView({
 											? activeEntry.localIndex
 											: undefined
 									}
+									onOpenArtifact={onOpenArtifact}
 								/>
 							);
 						})}

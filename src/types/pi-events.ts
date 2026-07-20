@@ -145,6 +145,12 @@ export interface PiErrorEvent {
 	retryable?: boolean;
 }
 
+// Playground artifacts are not part of pi's own wire protocol at all now —
+// see types/playground.ts. They arrive as an ordinary PiToolExecutionEndEvent
+// whose toolName is "show_artifact"; the frontend reads result.details
+// directly (types/playground.ts's PlaygroundArtifactPayload), no dedicated
+// event type needed.
+
 export type PiEvent =
 	| PiSessionEvent
 	| PiAgentStartEvent

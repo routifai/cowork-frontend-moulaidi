@@ -1,5 +1,4 @@
 import { ChatView } from "@/chat/ChatView";
-import { log } from "./lib/log";
 import { ExtensionUiDialog } from "@/components/ExtensionUiDialog";
 import { HelpDialog } from "@/components/HelpDialog";
 import { SettingsPage } from "@/components/SettingsPage";
@@ -11,6 +10,7 @@ import { RenameDialog } from "@/components/ui/rename-dialog";
 import { useUpdate } from "@/contexts/UpdateProvider";
 import { useExtensionUi } from "@/hooks/useExtensionUi";
 import { usePiStream } from "@/hooks/usePiStream";
+import { usePlaygroundArtifacts } from "@/hooks/usePlaygroundArtifacts";
 import { useProviders } from "@/hooks/useProviders";
 import { useTelemetry } from "@/hooks/useTelemetry";
 import {
@@ -21,12 +21,15 @@ import {
 } from "@/lib/builtinCommands";
 import { findModel, modelKey } from "@/lib/model-key";
 import { trackEvent } from "@/lib/telemetry";
+import { PlaygroundPanel, PlaygroundReopenTab } from "@/playground/PlaygroundPanel";
 import type { ChatMessage } from "@/types";
 import type { Command } from "@/types/commands";
+import type { PlaygroundArtifactPayload } from "@/types/playground";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { log } from "./lib/log";
 
 interface SessionEntry {
 	file: string;
@@ -48,6 +51,7 @@ interface SessionEntry {
 
 function App() {
 	const appUpdate = useUpdate();
+	const playground = usePlaygroundArtifacts();
 	const {
 		state: streamState,
 		startStream,
@@ -56,7 +60,7 @@ function App() {
 		followUpStream,
 		clearQueue,
 		dispatch,
-	} = usePiStream();
+	} = usePiStream({ onShowArtifact: playground.upsert });
 
 	// Custom instructions are no longer prepended to messages here. They live in
 	// INSTRUCTIONS.md and the sidecar injects them into the system prompt as
@@ -85,6 +89,19 @@ function App() {
 	const [showSettings, setShowSettings] = useState(false);
 	const [showModelSelector, setShowModelSelector] = useState(false);
 	const [showHelp, setShowHelp] = useState(false);
+	// Playground panel: user can dismiss it, but each new turn gets a fresh
+	// chance to auto-open (reset to false in handleSend, right before
+	// startStream) if that turn produces its own artifacts.
+	const [playgroundClosed, setPlaygroundClosed] = useState(false);
+	// Which artifact tab is active in the playground panel. Null means
+	// "auto-follow the most recently updated artifact." Lives here (not
+	// inside PlaygroundPanel) so clicking a show_artifact chip in the chat
+	// transcript can select a tab even while the panel is closed.
+	const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
+	const handleOpenArtifact = useCallback((id: string) => {
+		setPlaygroundClosed(false);
+		setSelectedArtifactId(id);
+	}, []);
 
 	// Session management
 	const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
@@ -260,7 +277,10 @@ function App() {
 			// Update loaded messages so the display shows full history
 			setLoadedSessionMessages(merged);
 
-			// Clear stream messages to prevent duplication on next render
+			// Clear stream messages to prevent duplication on next render. Safe to
+			// use plain RESET here — playground artifacts live in their own store
+			// (usePlaygroundArtifacts) now, entirely outside this reducer, so this
+			// can no longer touch them even by accident.
 			dispatch({ type: "RESET" });
 
 			// pi auto-persists during the agent loop — no manual save. Just
@@ -341,6 +361,7 @@ function App() {
 
 			// Keep loadedSessionMessages — startStream only produces the new turn.
 			// Merging happens in the stream-complete effect above.
+			setPlaygroundClosed(false);
 			startStream(text);
 		},
 		[activeSessionFile, startStream, models, activeModelId, workspaceCwd],
@@ -412,12 +433,14 @@ function App() {
 				// ignore
 			}
 			dispatch({ type: "RESET" });
+			playground.clear();
+			setSelectedArtifactId(null);
 			setLoadedSessionMessages(null);
 			// pi owns the session file; adopt its path as our identity.
 			setActiveSessionFile(file ?? `session-${Date.now()}.jsonl`);
 			return resolvedCwd;
 		},
-		[dispatch],
+		[dispatch, playground.clear],
 	);
 
 	// "New session" ALWAYS asks for a folder first (native picker), then starts
@@ -510,8 +533,10 @@ function App() {
 			setActiveSessionFile(null);
 			setLoadedSessionMessages(null);
 			dispatch({ type: "RESET" });
+			playground.clear();
+			setSelectedArtifactId(null);
 		}
-	}, [pendingDelete, activeSessionFile, dispatch]);
+	}, [pendingDelete, activeSessionFile, dispatch, playground.clear]);
 
 	// Open the rename popup for a session (mirrors the delete confirm flow).
 	const handleRequestRename = useCallback(
@@ -575,10 +600,13 @@ function App() {
 			setActiveSessionFile(file);
 			setLoadedSessionMessages(null);
 			dispatch({ type: "RESET" });
+			playground.clear();
+			setSelectedArtifactId(null);
 			try {
 				const result = await invoke("load_session", { sessionFile: file });
 				const data = result as {
 					messages: ChatMessage[];
+					artifacts?: PlaygroundArtifactPayload[];
 					model?: string;
 					provider?: string;
 					cwd?: string;
@@ -586,6 +614,12 @@ function App() {
 				if (data.messages && data.messages.length > 0) {
 					setLoadedSessionMessages(data.messages);
 				}
+				// Reconstruct the playground panel's artifacts from this session's
+				// history — the engine derives these from completed show_artifact
+				// tool calls in the session's toolCalls (see hypatia-backend's
+				// reconstructShowArtifacts), so this is a full replacement of the
+				// map, not a merge with the previous session.
+				playground.seed(data.artifacts ?? []);
 				// Reflect the workspace this session was restored into (the sidecar
 				// rebinds to the session's saved folder, or home for legacy chats).
 				if (typeof data.cwd === "string") {
@@ -617,7 +651,7 @@ function App() {
 				setLoadingSession(false);
 			}
 		},
-		[activeSessionFile, dispatch, models],
+		[activeSessionFile, dispatch, models, playground.clear, playground.seed],
 	);
 
 	// ── Build display messages ──
@@ -752,33 +786,55 @@ function App() {
 								<div className="text-sm text-muted-foreground">Loading session...</div>
 							</div>
 						) : (
-							<ChatView
-								messages={displayMessages}
-								streamingMessage={streamState.streamingMessage}
-								isRunning={streamState.isRunning}
-								error={streamState.error}
-								onSend={handleSend}
-								onAbort={() => abortStream()}
-								/* Issue #201, PR 2 — mid-turn message queuing. */
-								onSteer={steerStream}
-								onFollowUp={followUpStream}
-								/* Issue #201, PR 3 — queue visibility + editing. */
-								queue={streamState.queue}
-								onEditQueue={handleEditQueue}
-								sessionKey={activeSessionFile ?? "new"}
-								onRetry={() => {
-									const lastUser = [...displayMessages].reverse().find((m) => m.role === "user");
-									if (lastUser?.content) handleSend(lastUser.content);
-								}}
-								models={models}
-								currentModelId={activeModelId}
-								onModelSelect={handleModelSelect}
-								modelSelectorOpen={showModelSelector}
-								onModelSelectorOpenChange={setShowModelSelector}
-								draft={composerDraft}
-								commands={BUILTIN_COMMANDS}
-								onRunCommand={handleRunCommand}
-							/>
+							<div className="flex-1 flex min-h-0">
+								<div className="flex-1 flex flex-col min-w-0">
+									<ChatView
+										messages={displayMessages}
+										streamingMessage={streamState.streamingMessage}
+										isRunning={streamState.isRunning}
+										error={streamState.error}
+										onSend={handleSend}
+										onAbort={() => abortStream()}
+										/* Issue #201, PR 2 — mid-turn message queuing. */
+										onSteer={steerStream}
+										onFollowUp={followUpStream}
+										/* Issue #201, PR 3 — queue visibility + editing. */
+										queue={streamState.queue}
+										onEditQueue={handleEditQueue}
+										sessionKey={activeSessionFile ?? "new"}
+										onRetry={() => {
+											const lastUser = [...displayMessages]
+												.reverse()
+												.find((m) => m.role === "user");
+											if (lastUser?.content) handleSend(lastUser.content);
+										}}
+										models={models}
+										currentModelId={activeModelId}
+										onModelSelect={handleModelSelect}
+										modelSelectorOpen={showModelSelector}
+										onModelSelectorOpenChange={setShowModelSelector}
+										draft={composerDraft}
+										commands={BUILTIN_COMMANDS}
+										onRunCommand={handleRunCommand}
+										onOpenArtifact={handleOpenArtifact}
+									/>
+								</div>
+								{playgroundClosed ? (
+									<PlaygroundReopenTab
+										artifacts={playground.artifacts}
+										onOpen={() => setPlaygroundClosed(false)}
+									/>
+								) : (
+									Object.keys(playground.artifacts).length > 0 && (
+										<PlaygroundPanel
+											artifacts={playground.artifacts}
+											onClose={() => setPlaygroundClosed(true)}
+											selectedId={selectedArtifactId}
+											onSelectId={setSelectedArtifactId}
+										/>
+									)
+								)}
+							</div>
 						)}
 					</div>
 				</main>

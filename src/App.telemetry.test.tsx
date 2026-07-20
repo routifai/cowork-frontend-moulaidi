@@ -33,6 +33,7 @@ vi.mock("@/hooks/usePiStream", () => ({
 			queue: [],
 			isStreaming: false,
 			model: undefined,
+			artifacts: {},
 		},
 		startStream: vi.fn(),
 		abortStream: vi.fn(),

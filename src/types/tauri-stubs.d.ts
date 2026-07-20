@@ -15,7 +15,10 @@ declare module "@tauri-apps/api/core" {
 
 declare module "@tauri-apps/api/event" {
 	export type UnlistenFn = () => void;
-	export function listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<() => void>;
+	export function listen<T>(
+		event: string,
+		handler: (event: { payload: T }) => void,
+	): Promise<() => void>;
 }
 
 declare module "@tauri-apps/api/app" {
@@ -53,7 +56,12 @@ declare module "@tauri-apps/plugin-updater" {
 		version: string;
 		currentVersion: string;
 		body?: string;
-		downloadAndInstall(event?: (event: { event: string; data?: { contentLength?: number; chunkLength?: number } }) => void): Promise<void>;
+		downloadAndInstall(
+			event?: (event: {
+				event: string;
+				data?: { contentLength?: number; chunkLength?: number };
+			}) => void,
+		): Promise<void>;
 	}
 	export function check(): Promise<Update | null>;
 }

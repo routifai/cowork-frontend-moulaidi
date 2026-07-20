@@ -1,5 +1,11 @@
 import { describe, expect, it, test } from "vitest";
-import { type ArtifactType, detectArtifactType, extractFilePaths, parentDir } from "./artifacts";
+import {
+	type ArtifactType,
+	detectArtifactType,
+	extractFilePaths,
+	parentDir,
+	svgToImgSrc,
+} from "./artifacts";
 
 // ─── extractFilePaths ───────────────────────────────────────────────
 
@@ -102,5 +108,27 @@ describe("parentDir", () => {
 	// Windows paths are normalized to forward slashes for Tauri compatibility
 	test("normalizes Windows backslashes to forward slashes", () => {
 		expect(parentDir("C:\\Users\\arjun\\file.txt")).toBe("C:/Users/arjun");
+	});
+});
+
+describe("svgToImgSrc", () => {
+	it("encodes SVG content as a data:image/svg+xml URI", () => {
+		const svg = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="2"/></svg>';
+		const src = svgToImgSrc(svg);
+		expect(src).toMatch(/^data:image\/svg\+xml;charset=utf-8,/);
+	});
+
+	it("round-trips: decoding the URI recovers the exact original content", () => {
+		const svg = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>';
+		const src = svgToImgSrc(svg);
+		const encoded = src.slice(src.indexOf(",") + 1);
+		expect(decodeURIComponent(encoded)).toBe(svg);
+	});
+
+	it("a <script>-laced payload never appears as a literal, executable DOM node — it's fully percent-encoded", () => {
+		const malicious = "<svg><script>alert(1)</script></svg>";
+		const src = svgToImgSrc(malicious);
+		expect(src).not.toContain("<script>");
+		expect(src).not.toContain(malicious);
 	});
 });

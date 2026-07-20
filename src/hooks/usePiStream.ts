@@ -1,5 +1,4 @@
 import type { ChatMessage, ToolCallInfo } from "@/types";
-import { log } from "../lib/log";
 import type {
 	PiErrorEvent,
 	PiEvent,
@@ -8,9 +7,11 @@ import type {
 	PiToolExecutionStartEvent,
 	PiToolExecutionUpdateEvent,
 } from "@/types/pi-events";
+import { type PlaygroundArtifactPayload, isPlaygroundArtifactPayload } from "@/types/playground";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { log } from "../lib/log";
 
 /**
  * Snapshot of the agent session's pending message queue (#201 PR 3).
@@ -453,9 +454,7 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				return { ...state, promptEchoConsumed: true };
 			}
 			const kind =
-				state.queuedKinds[action.content] === "follow_up"
-					? "queued-follow-up"
-					: "queued-steer";
+				state.queuedKinds[action.content] === "follow_up" ? "queued-follow-up" : "queued-steer";
 			// Finalize the assistant work so far into its own bubble so the
 			// delivered user message lands AFTER it, not before.
 			const prev = state.streamingMessage;
@@ -551,9 +550,24 @@ function extractToolCallInfo(tc: {
 	};
 }
 
-export function usePiStream() {
+export interface UsePiStreamOptions {
+	/** Called when the agent invokes the show_artifact tool — routes into the
+	 * playground panel's own store (usePlaygroundArtifacts), not this reducer. */
+	onShowArtifact?: (payload: PlaygroundArtifactPayload) => void;
+}
+
+export function usePiStream(options?: UsePiStreamOptions) {
 	const [state, dispatch] = useReducer(streamReducer, INITIAL_STATE);
 	const [toolPhase, setToolPhase] = useState<ToolPhase | null>(null);
+
+	// Kept in a ref so startStream's useCallback below doesn't need
+	// onShowArtifact in its deps — the channel handler always calls
+	// whatever the latest callback is, without startStream's identity
+	// changing if the caller passes a fresh function each render.
+	const onShowArtifactRef = useRef(options?.onShowArtifact);
+	useEffect(() => {
+		onShowArtifactRef.current = options?.onShowArtifact;
+	}, [options?.onShowArtifact]);
 
 	const startStream = useCallback(async (text: string) => {
 		dispatch({ type: "START_STREAM", prompt: text });
@@ -676,6 +690,13 @@ export function usePiStream() {
 								? { type: "error", toolName: te.toolName, message: "Tool failed" }
 								: { type: "done", toolName: te.toolName },
 						);
+						if (
+							!te.isError &&
+							te.toolName === "show_artifact" &&
+							isPlaygroundArtifactPayload(te.result?.details)
+						) {
+							onShowArtifactRef.current?.(te.result.details);
+						}
 						break;
 					}
 

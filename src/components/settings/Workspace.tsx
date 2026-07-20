@@ -92,9 +92,7 @@ export function Workspace() {
 						<FolderCog className="w-4 h-4 text-primary" />
 					</div>
 					<div className="text-left min-w-0">
-						<p className="text-[13px] font-medium text-foreground">
-							Hypatia Cowork folder
-						</p>
+						<p className="text-[13px] font-medium text-foreground">Hypatia Cowork folder</p>
 						<p className="text-[11px] text-muted-foreground truncate" title={effective}>
 							{effective || "Loading…"}
 							{!configured.trim() && fallback ? "  ·  default" : ""}

@@ -22,7 +22,11 @@ export interface EngineAdapter {
 	 * Send a command and wait for a result envelope.
 	 * Mirrors the old Tauri `invoke("command", payload)` shape.
 	 */
-	invoke<T = unknown>(command: string, payload?: Record<string, unknown>, options?: EngineInvokeOptions): Promise<T>;
+	invoke<T = unknown>(
+		command: string,
+		payload?: Record<string, unknown>,
+		options?: EngineInvokeOptions,
+	): Promise<T>;
 
 	/**
 	 * Subscribe to a global engine event (e.g. "ready", "queue_update").
