@@ -12,71 +12,71 @@
 
 /* ── Brand constants (shared across themes) ── */
 :root {
-	--brand: 210 99% 48%;
-	--brand-2: 217 100% 59%;
+	--brand: 210 100% 32%; /* RBC blue #0051a5 */
+	--brand-2: 222 100% 55%; /* electric blue #1a66ff */
 }
 
-/* ── Light mode (default — no data-theme attr) ── */
+/* ── Light mode — V3 editorial palette (new-design/ package).
+      Ink #0d0d0f on #fbfbfc, neutral hairlines, RBC blue #0051a5 as the
+      single saturated accent, Inter/JetBrains Mono type. ── */
 :root {
-	--background: 210 24% 98%;
-	--foreground: 214 32% 10%;
+	--background: 240 10% 99%;
+	--foreground: 240 7% 6%;
 	--card: 0 0% 100%;
-	--card-foreground: 214 32% 12%;
+	--card-foreground: 240 7% 6%;
 	--popover: 0 0% 100%;
-	--popover-foreground: 214 32% 12%;
-	--primary: 210 99% 48%;
+	--popover-foreground: 240 7% 6%;
+	--primary: 210 100% 32%;
 	--primary-foreground: 0 0% 100%;
-	--secondary: 210 20% 95%;
-	--secondary-foreground: 214 28% 22%;
-	--muted: 213 20% 94%;
-	--muted-foreground: 214 12% 40%;
-	--accent: 210 60% 94%;
-	--accent-foreground: 214 36% 22%;
+	--secondary: 240 5% 96%;
+	--secondary-foreground: 240 6% 15%;
+	--muted: 240 5% 96%;
+	--muted-foreground: 240 4% 46%;
+	--accent: 240 5% 94%;
+	--accent-foreground: 240 7% 6%;
 	--destructive: 0 72% 52%;
 	--destructive-foreground: 0 0% 98%;
-	--border: 214 20% 88%;
-	--input: 214 20% 88%;
-	--ring: 210 99% 48%;
+	--border: 240 5% 91%;
+	--input: 240 5% 91%;
+	--ring: 210 100% 32%;
 	--radius: 0.9rem;
-	--font-sans: "Chakra Petch", "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI",
-		Roboto, sans-serif;
-	--font-chakra: "Chakra Petch", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-	--font-space-grotesk: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-		sans-serif;
-	--font-mono: "SF Mono", "Fira Code", "Fira Mono", Menlo, monospace;
+	--font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	--font-chakra: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	--font-space-grotesk: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	--font-mono: "JetBrains Mono", "SF Mono", "Fira Code", Menlo, monospace;
 
 	/* ── Elevation / glass depth (per-theme) ── */
 	--elev-bg: 0 0% 100%;
-	--elev-border: 214 22% 86%;
+	--elev-border: 240 5% 90%;
 	--elev-highlight: 0 0% 100%;
-	--elev-shadow: 214 40% 30%;
-	--elev-glass-blur: 14px;
-	--elev-glass-alpha: 0.72;
-	--aurora-1: 210 99% 48%;
-	--aurora-2: 217 100% 59%;
-	--aurora-alpha: 0.1;
+	--elev-shadow: 240 7% 6%;
+	--elev-glass-blur: 28px;
+	--elev-glass-alpha: 0.62;
+	--aurora-1: 210 100% 32%;
+	--aurora-2: 222 100% 55%;
+	--aurora-alpha: 0.05;
 
 	/* ── Chat layout ── */
-	--chat-user-bg: 210 22% 95%;
-	--chat-user-fg: 214 32% 10%;
+	--chat-user-bg: 0 0% 100%;
+	--chat-user-fg: 240 7% 6%;
 	--chat-assistant-bg: 0 0% 100%;
-	--chat-assistant-fg: 214 32% 10%;
-	--chat-system-bg: 210 20% 92%;
-	--chat-system-fg: 214 12% 40%;
-	--chat-avatar-user-bg: 210 99% 48%;
+	--chat-assistant-fg: 240 7% 6%;
+	--chat-system-bg: 240 5% 94%;
+	--chat-system-fg: 240 4% 46%;
+	--chat-avatar-user-bg: 240 7% 6%;
 	--chat-avatar-user-fg: 0 0% 100%;
-	--chat-avatar-assistant-bg: 210 18% 86%;
-	--chat-avatar-assistant-fg: 214 32% 12%;
+	--chat-avatar-assistant-bg: 240 5% 88%;
+	--chat-avatar-assistant-fg: 240 7% 6%;
 
 	/* ── Status bar ── */
-	--status-bg: 210 24% 95%;
-	--status-divider: 214 20% 88%;
-	--status-active-fg: 210 99% 48%;
+	--status-bg: 240 5% 96%;
+	--status-divider: 240 5% 91%;
+	--status-active-fg: 210 100% 32%;
 
 	/* ── Tool execution blocks ── */
-	--tool-running-bg: 210 99% 48% / 0.12;
-	--tool-running-fg: 210 99% 44%;
-	--tool-running-border: 210 99% 48% / 0.45;
+	--tool-running-bg: 210 100% 32% / 0.1;
+	--tool-running-fg: 210 100% 32%;
+	--tool-running-border: 210 100% 32% / 0.4;
 	--tool-complete-bg: 142 60% 40% / 0.08;
 	--tool-complete-fg: 142 60% 40%;
 	--tool-complete-border: 142 60% 40% / 0.2;
@@ -97,12 +97,12 @@
 	--success-subtle: 142 60% 40% / 0.06;
 	--error-subtle: 0 72% 52% / 0.06;
 
-	/* ── Sidebar ── */
-	--sidebar-background: 210 26% 96%;
-	--sidebar-foreground: 214 32% 14%;
-	--sidebar-accent: 210 60% 92%;
-	--sidebar-accent-foreground: 214 32% 20%;
-	--sidebar-border: 214 20% 88%;
+	/* ── Sidebar (V3: stone) ── */
+	--sidebar-background: 0 0% 98%;
+	--sidebar-foreground: 240 7% 10%;
+	--sidebar-accent: 240 5% 93%;
+	--sidebar-accent-foreground: 240 7% 12%;
+	--sidebar-border: 240 5% 91%;
 }
 
 /* ── Dark mode via OS (only when no manual data-theme set) ── */
@@ -180,81 +180,6 @@
 		--sidebar-accent-foreground: 0 0% 96%;
 		--sidebar-border: 220 8% 16%;
 	}
-}
-
-/* ── Manual light mode override ── */
-[data-theme="light"] {
-	--background: 210 24% 98%;
-	--foreground: 214 32% 10%;
-	--card: 0 0% 100%;
-	--card-foreground: 214 32% 12%;
-	--popover: 0 0% 100%;
-	--popover-foreground: 214 32% 12%;
-	--primary: 210 99% 48%;
-	--primary-foreground: 0 0% 100%;
-	--secondary: 210 20% 95%;
-	--secondary-foreground: 214 28% 22%;
-	--muted: 213 20% 94%;
-	--muted-foreground: 214 12% 40%;
-	--accent: 210 60% 94%;
-	--accent-foreground: 214 36% 22%;
-	--destructive: 0 72% 52%;
-	--destructive-foreground: 0 0% 98%;
-	--border: 214 20% 88%;
-	--input: 214 20% 88%;
-	--ring: 210 99% 48%;
-
-	--elev-bg: 0 0% 100%;
-	--elev-border: 214 22% 86%;
-	--elev-highlight: 0 0% 100%;
-	--elev-shadow: 214 40% 30%;
-	--elev-glass-blur: 14px;
-	--elev-glass-alpha: 0.72;
-	--aurora-1: 210 99% 48%;
-	--aurora-2: 217 100% 59%;
-	--aurora-alpha: 0.1;
-
-	--chat-user-bg: 210 22% 95%;
-	--chat-user-fg: 214 32% 10%;
-	--chat-assistant-bg: 0 0% 100%;
-	--chat-assistant-fg: 214 32% 10%;
-	--chat-system-bg: 210 20% 92%;
-	--chat-system-fg: 214 12% 40%;
-	--chat-avatar-user-bg: 210 99% 48%;
-	--chat-avatar-user-fg: 0 0% 100%;
-	--chat-avatar-assistant-bg: 210 18% 86%;
-	--chat-avatar-assistant-fg: 214 32% 12%;
-
-	--status-bg: 210 24% 95%;
-	--status-divider: 214 20% 88%;
-	--status-active-fg: 210 99% 48%;
-
-	--tool-running-bg: 210 99% 48% / 0.12;
-	--tool-running-fg: 210 99% 44%;
-	--tool-running-border: 210 99% 48% / 0.45;
-	--tool-complete-bg: 142 60% 40% / 0.08;
-	--tool-complete-fg: 142 60% 40%;
-	--tool-complete-border: 142 60% 40% / 0.2;
-	--tool-error-bg: 0 72% 52% / 0.08;
-	--tool-error-fg: 0 72% 52%;
-	--tool-error-border: 0 72% 52% / 0.2;
-	--tool-timeline-line: 214 20% 88%;
-
-	--diff-added-bg: 142 60% 40% / 0.08;
-	--diff-added-fg: 142 60% 40%;
-	--diff-removed-bg: 0 72% 52% / 0.08;
-	--diff-removed-fg: 0 72% 52%;
-	--diff-context-fg: 214 12% 40%;
-	--diff-hunk-fg: 210 99% 48%;
-
-	--success-subtle: 142 60% 40% / 0.06;
-	--error-subtle: 0 72% 52% / 0.06;
-
-	--sidebar-background: 210 26% 96%;
-	--sidebar-foreground: 214 32% 14%;
-	--sidebar-accent: 210 60% 92%;
-	--sidebar-accent-foreground: 214 32% 20%;
-	--sidebar-border: 214 20% 88%;
 }
 
 /* ── Manual dark mode override ── */
@@ -649,23 +574,19 @@ body[data-wallpaper]::before {
 /* ── Composer glass (#268 UI refresh) ──
    The message input floats as its own blue-tinted glass slab above the
    message area, with a brand glow on focus. */
+/* V3 composer: frosted glass panel, 22px radius (reference: chat-v3.html) */
 .composer-glass {
-	background: linear-gradient(
-		160deg,
-		hsl(var(--brand) / 0.05),
-		hsl(var(--elev-bg) / calc(var(--elev-glass-alpha) - 0.02))
-	);
-	backdrop-filter: blur(var(--elev-glass-blur)) saturate(140%);
-	-webkit-backdrop-filter: blur(var(--elev-glass-blur)) saturate(140%);
-	border: 1px solid hsl(var(--elev-border) / 0.75);
-	box-shadow: 0 1px 0 0 hsl(var(--elev-highlight) / 0.5) inset, 0 8px 24px -14px
-		hsl(var(--elev-shadow) / 0.35);
+	background: rgba(255, 255, 255, 0.62);
+	backdrop-filter: blur(28px) saturate(1.4);
+	-webkit-backdrop-filter: blur(28px) saturate(1.4);
+	border: 1px solid rgba(231, 231, 233, 0.9);
+	border-radius: 22px !important;
+	box-shadow: 0 12px 40px rgba(13, 13, 15, 0.05);
 	transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
 .composer-glass:focus-within {
-	border-color: hsl(var(--ring) / 0.5);
-	box-shadow: 0 1px 0 0 hsl(var(--elev-highlight) / 0.5) inset, 0 0 0 3px hsl(var(--ring) / 0.12), 0
-		10px 28px -14px hsl(var(--brand) / 0.4);
+	border-color: #0d0d0f;
+	box-shadow: 0 12px 40px rgba(13, 13, 15, 0.08);
 }
 
 /* ── Chat bubbles (#268 UI refresh) ──
@@ -678,17 +599,21 @@ body[data-wallpaper]::before {
 	-webkit-backdrop-filter: blur(8px) saturate(125%);
 	transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
+/* V3: assistant turns are plain typographic prose — no card at all. */
 .chat-bubble-assistant {
-	background: hsl(var(--elev-bg) / calc(var(--elev-glass-alpha) - 0.04));
-	border-color: hsl(var(--elev-border) / 0.55);
-	box-shadow: 0 1px 0 0 hsl(var(--elev-highlight) / 0.4) inset, 0 6px 18px -14px
-		hsl(var(--elev-shadow) / 0.32);
+	background: transparent;
+	border-color: transparent;
+	box-shadow: none;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
 }
+/* V3: user turns are frosted-glass panels (reference: chat-v3.html). */
 .chat-bubble-user {
-	background: linear-gradient(135deg, hsl(var(--brand) / 0.14) 0%, hsl(var(--brand-2) / 0.09) 100%);
-	border-color: hsl(var(--primary) / 0.22);
-	box-shadow: 0 1px 0 0 hsl(var(--elev-highlight) / 0.4) inset, 0 6px 18px -14px
-		hsl(var(--brand) / 0.35);
+	background: rgba(255, 255, 255, 0.62);
+	border-color: rgba(231, 231, 233, 0.9);
+	box-shadow: 0 12px 40px rgba(13, 13, 15, 0.05);
+	border-radius: 22px;
+	border-top-right-radius: 6px;
 }
 .brand-gradient {
 	background-image: linear-gradient(135deg, hsl(var(--brand)) 0%, hsl(var(--brand-2)) 100%);
@@ -1424,9 +1349,7 @@ body[data-wallpaper]::before {
 		rgba(120, 190, 255, 0.06) 55%,
 		rgba(255, 255, 255, 0) 72%
 	);
-	transition:
-		left 1.4s cubic-bezier(0.2, 0.8, 0.2, 1),
-		top 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+	transition: left 1.4s cubic-bezier(0.2, 0.8, 0.2, 1), top 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .v3-shimmer {
 	background: linear-gradient(90deg, #a3a3a8 30%, #0d0d0f 50%, #a3a3a8 70%);

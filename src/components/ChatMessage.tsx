@@ -2,7 +2,7 @@ import { rehypeHighlightTerm } from "@/lib/rehypeHighlightTerm";
 import { trackEvent } from "@/lib/telemetry";
 import type { ChatMessage as ChatMessageType, ModelInfo } from "@/types";
 import { invoke } from "@tauri-apps/api/core";
-import { Clipboard, Download, FolderOpen, User } from "lucide-react";
+import { Clipboard, Download, FolderOpen } from "lucide-react";
 import { useCallback, useState } from "react";
 import ReactMarkdown, { type Options as ReactMarkdownOptions } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -131,75 +131,77 @@ export function ChatMessageItem({
 		? [[rehypeHighlightTerm, { term: findTerm, activeIndex: activeFindIndex }]]
 		: undefined;
 
-	return (
-		<div className="group px-4 py-1.5 animate-fade-in" data-message-id={message.id}>
-			<div
-				className={`chat-bubble ${
-					isUser ? "chat-bubble-user" : "chat-bubble-assistant"
-				} flex gap-3.5 mx-auto w-full px-4 py-3`}
-				style={{ maxWidth: "var(--chat-max-width, 820px)" }}
-			>
-				{/* Avatar */}
-				<div className="flex-shrink-0">
-					{isUser ? (
-						<div
-							className="w-7 h-7 rounded-lg flex items-center justify-center"
-							style={{
-								background:
-									"linear-gradient(135deg, hsl(var(--primary) / 0.9), hsl(var(--primary) / 0.6))",
-								color: "hsl(var(--primary-foreground))",
-							}}
-						>
-							<User className="w-4 h-4" strokeWidth={2.5} />
-						</div>
-					) : (
-						<img
-							src="/hypatia-mark.png"
-							alt="Hypatia"
-							className="w-7 h-7 rounded-lg object-cover"
-							draggable={false}
-						/>
-					)}
-				</div>
+	const timeLabel = new Date(message.timestamp).toLocaleTimeString([], {
+		hour: "numeric",
+		minute: "2-digit",
+	});
 
-				{/* Content */}
-				<div className="flex-1 min-w-0">
-					{/* Header row */}
-					<div className="flex items-center gap-2 mb-0.5">
-						<span className="text-xs font-medium text-foreground">
-							{isUser ? "You" : "Hypatia"}
-						</span>
-						<span className="text-[10px] text-muted-foreground tabular-nums">
-							{new Date(message.timestamp).toLocaleTimeString([], {
-								hour: "2-digit",
-								minute: "2-digit",
-							})}
-						</span>
-						{/* Delivered steer/follow-up user messages (injected mid-run by
-					    the SDK) carry a kind so the transcript shows what routed the
-					    turn. Live queued items still render inline via ChatView. */}
+	// ── V3 user turn: right-aligned frosted-glass panel under a mono label ──
+	if (isUser) {
+		return (
+			<div className="group px-4 py-2 animate-fade-in" data-message-id={message.id}>
+				<div
+					className="mx-auto flex w-full flex-col items-end"
+					style={{ maxWidth: "var(--chat-max-width, 820px)" }}
+				>
+					<div className="mb-2 flex items-center gap-2 pr-1 font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
 						{(message.kind === "queued-steer" || message.kind === "queued-follow-up") && (
-							<span className="text-[10px] font-medium text-status-active-fg bg-status-active-bg/40 px-1.5 py-0 rounded">
+							<span className="text-status-active-fg">
 								{message.kind === "queued-steer" ? "Steering" : "Follow-up"}
 							</span>
 						)}
-						{message.model && (
-							<span className="text-[10px] text-muted-foreground/50 bg-muted/60 px-1.5 py-0 rounded font-mono">
-								{modelLabel(message, models)}
-							</span>
-						)}
-						{message.isStreaming && (
-							<span className="inline-flex items-center gap-1 text-[10px] font-medium text-status-active-fg">
-								<span className="w-1.5 h-1.5 rounded-full animate-pulse-dot bg-primary" />
-								streaming
-							</span>
-						)}
-						{!isUser &&
-							message.toolCalls &&
-							message.toolCalls.length > 0 &&
-							!message.isStreaming && <ToolCallSummary toolCalls={message.toolCalls} />}
+						<span>You · {timeLabel}</span>
 					</div>
+					<div className="chat-bubble chat-bubble-user max-w-xl px-6 py-4">
+						<div className="chat-markdown" style={{ color: "hsl(var(--chat-user-fg))" }}>
+							<ReactMarkdown
+								remarkPlugins={[remarkGfm]}
+								rehypePlugins={rehypePlugins}
+								components={markdownComponents}
+							>
+								{message.content || ""}
+							</ReactMarkdown>
+						</div>
+					</div>
+				</div>
+			</div>
+		);
+	}
 
+	// ── V3 assistant turn: plain typographic prose, avatar-slot echo + mono
+	//    label row (reference: chat-v3.html) ──
+	return (
+		<div className="group px-4 py-2 animate-fade-in" data-message-id={message.id}>
+			<div className="mx-auto w-full" style={{ maxWidth: "var(--chat-max-width, 820px)" }}>
+				{/* Label row */}
+				<div className="mb-2 flex items-center gap-3">
+					{/* Avatar echo: hairline ring where the Pulse docks while streaming */}
+					<span
+						className="h-7 w-7 shrink-0 rounded-full border"
+						style={{ borderColor: "hsl(var(--border))" }}
+						aria-hidden="true"
+					/>
+					<span className="font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+						Hypatia · {timeLabel}
+					</span>
+					{message.model && (
+						<span className="rounded bg-muted/60 px-1.5 py-0 font-mono text-[10px] text-muted-foreground/60">
+							{modelLabel(message, models)}
+						</span>
+					)}
+					{message.isStreaming && (
+						<span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.2em] text-status-active-fg">
+							<span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-primary" />
+							streaming
+						</span>
+					)}
+					{message.toolCalls && message.toolCalls.length > 0 && !message.isStreaming && (
+						<ToolCallSummary toolCalls={message.toolCalls} />
+					)}
+				</div>
+
+				{/* Content column, indented past the avatar slot */}
+				<div className="min-w-0 pl-10">
 					{/* Thinking block — simple (Perplexity-style) by default, full when
 				    details are expanded via Ctrl+O. */}
 					{!isUser && message.thinking && (

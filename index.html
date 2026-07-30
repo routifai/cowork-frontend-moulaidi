@@ -10,7 +10,9 @@
     <!-- V3 design language fonts (AuthGate + future V3 surfaces) -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <script>
-      (function(){var t;try{t=localStorage.getItem("hypatia-theme-mode")}catch{}if(t==="dark"||t==="light"){document.documentElement.setAttribute("data-theme",t)}else if(window.matchMedia("(prefers-color-scheme: dark)").matches){document.documentElement.setAttribute("data-theme","dark")}else{document.documentElement.setAttribute("data-theme","light")}})();
+      /* V3 design language is light-only (new-design/INSTRUCTIONS.md) — the
+         editorial palette has no dark variant, so the app pins light theme. */
+      document.documentElement.setAttribute("data-theme", "light");
     </script>
     <meta name="description" content="Hypatia Cowork — A desktop AI coworker. Built with ❤️ by Mhammed Oulaidi." />
     <meta name="keywords" content="AI agent, coding agent, AI coworker, agentic work harness, desktop AI" />
