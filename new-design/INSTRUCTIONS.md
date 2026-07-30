@@ -91,6 +91,29 @@ implement it — do not replace it with fixed positioning.
   orb hero via `webgl/orb-presence.js`, market ticker strip, auth → workspace
   GSAP timeline where the orb is the continuity object.
 
+### Phase 5 — auth → chat transition ("Starting up" metamorphosis)
+Reference: `reference/transition-v3.html` (approved). Four acts, ~6 s, one
+Three.js scene containing BOTH presences so there is never a canvas swap:
+
+1. **Departure** — glitch burst on login; auth panel slides out; orb flies to
+   screen center.
+2. **Splash** — serif "Starting up." under the orb, shimmer status cycle
+   (map to real boot events: auth → session restore → engine warmup → context
+   sync), gold→blue hairline progress + mono percentage. Orb in `thinking`.
+3. **Metamorphosis** — orb overcharges (amp/freq spike, contracts), white
+   radial flash + full glitch, orb implodes and dissolves via a `uFade`
+   uniform (fragment alpha, `transparent: true`); Pulse becomes visible at the
+   same position with ring radius matched to the dying orb's silhouette
+   (`bornScale = orbRadius × orbScale / pulseR0`), born spinning/chaotic with a
+   `birth` 0→1 param scaling bar heights and line opacity, then calms to rest.
+4. **Arrival** — splash title glitches to "Welcome back.", splash lifts away,
+   chat chrome enters, Pulse flies into the composer slot via DOM anchoring.
+
+Integration notes: drive the progress bar and status lines from real startup
+promises, not timers — the timeline waits on them (min display time ~2.5 s so
+the metamorphosis never feels cut short). Reduced motion: skip flash and
+charge, crossfade orb→pulse, show statuses without shimmer.
+
 ## 4. Hard requirements
 
 - `prefers-reduced-motion`: presences drop to slow drift, no glitch, no typewriter

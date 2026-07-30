@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypatia V3 — Auth → Chat Transition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ink: '#0d0d0f',
+                        surface: '#ffffff',
+                        stone: '#fafafa',
+                        border: '#e7e7e9',
+                        accent: '#0051a5',
+                        gold: '#e8a821',
+                        success: '#10a37f'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        serif: ['Playfair Display', 'Georgia', 'serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    borderRadius: { panel: '22px' }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; overflow: hidden; background: #fbfbfc; color: #0d0d0f; }
+        .editorial-text { font-family: 'Playfair Display', serif; letter-spacing: -0.02em; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.62);
+            backdrop-filter: blur(28px) saturate(1.4);
+            -webkit-backdrop-filter: blur(28px) saturate(1.4);
+            border: 1px solid rgba(231, 231, 233, 0.9);
+            box-shadow: 0 12px 40px rgba(13, 13, 15, 0.05);
+        }
+        .subtle-shadow { box-shadow: 0 4px 20px rgba(13, 13, 15, 0.04); }
+        ::-webkit-scrollbar { width: 0; }
+        input::placeholder, textarea::placeholder { color: #a3a3a8; font-weight: 300; }
+
+        .grain {
+            position: fixed; inset: 0; z-index: 70; pointer-events: none;
+            opacity: 0.035; mix-blend-mode: multiply;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        .glitch-text { position: relative; }
+        .glitch-text::before, .glitch-text::after {
+            content: attr(data-text);
+            position: absolute; inset: 0; opacity: 0; pointer-events: none; white-space: nowrap;
+        }
+        .glitch-text.glitching::before { opacity: 0.85; color: #0051a5; animation: ga 0.24s steps(2) both; }
+        .glitch-text.glitching::after  { opacity: 0.85; color: #e8a821; animation: gb 0.24s steps(2) both; }
+        @keyframes ga {
+            0% { clip-path: inset(8% 0 62% 0); transform: translate(-4px, 1px); }
+            50% { clip-path: inset(42% 0 28% 0); transform: translate(3px, -1px); }
+            100% { clip-path: inset(70% 0 4% 0); transform: translate(-2px, 0); }
+        }
+        @keyframes gb {
+            0% { clip-path: inset(58% 0 16% 0); transform: translate(4px, -1px); }
+            50% { clip-path: inset(12% 0 66% 0); transform: translate(-3px, 1px); }
+            100% { clip-path: inset(36% 0 42% 0); transform: translate(2px, 0); }
+        }
+
+        .shimmer-text {
+            background: linear-gradient(90deg, #a3a3a8 30%, #0d0d0f 50%, #a3a3a8 70%);
+            background-size: 200% 100%;
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            animation: shimmer 1.8s linear infinite;
+        }
+        @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+        .type-cursor {
+            display: inline-block; width: 0.08em; height: 0.85em;
+            background: #0d0d0f; vertical-align: baseline; margin-left: 2px;
+            animation: blink 1s steps(1) infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        /* The flash at the moment of metamorphosis */
+        #morph-flash {
+            position: fixed; left: 50%; top: 50%;
+            width: 60vmin; height: 60vmin;
+            transform: translate(-50%, -50%);
+            border-radius: 9999px;
+            background: radial-gradient(circle,
+                rgba(255,255,255,0.95) 0%,
+                rgba(190,215,255,0.55) 35%,
+                rgba(26,102,255,0.18) 60%,
+                rgba(255,255,255,0) 75%);
+            opacity: 0; pointer-events: none; z-index: 30;
+        }
+
+        #orb-glow {
+            position: fixed;
+            width: 56vmin; height: 56vmin;
+            border-radius: 9999px; pointer-events: none; z-index: 1;
+            background: radial-gradient(circle at 42% 38%,
+                rgba(46, 105, 255, 0.22) 0%,
+                rgba(64, 140, 255, 0.10) 32%,
+                rgba(120, 190, 255, 0.06) 55%,
+                rgba(255, 255, 255, 0) 72%);
+            filter: blur(6px);
+            transform: translate(-50%, -50%);
+        }
+
+        /* Splash progress hairline */
+        #progress-track {
+            height: 1px; width: 220px;
+            background: rgba(13,13,15,0.08);
+            overflow: hidden;
+        }
+        #progress-fill {
+            height: 100%; width: 0%;
+            background: linear-gradient(to right, #e8a821, #0051a5);
+        }
+
+        .hairline-top { border-top: 1px solid rgba(13,13,15,0.06); }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { animation: none !important; transition: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="grain"></div>
+    <div id="orb-glow"></div>
+    <div id="morph-flash"></div>
+    <canvas id="gl" class="fixed inset-0 z-[2] pointer-events-none"></canvas>
+
+    <!-- ============================================= -->
+    <!-- SCENE 1 : AUTH                                -->
+    <!-- ============================================= -->
+    <div id="auth-scene" class="absolute inset-0 z-10 flex w-full h-full">
+        <div id="auth-left" class="w-1/2 h-full flex flex-col justify-center px-24 relative z-10">
+            <div class="absolute top-10 left-10 flex items-center space-x-3">
+                <div class="w-6 h-6 bg-ink rounded-full"></div>
+                <span class="font-semibold text-lg tracking-tight">Hypatia</span>
+            </div>
+            <div class="flex items-center space-x-3 mb-10">
+                <div class="w-1.5 h-1.5 rounded-full bg-gold animate-pulse"></div>
+                <span class="text-[11px] font-mono uppercase tracking-[0.3em] text-gray-400">Always-on agent workspace</span>
+            </div>
+            <div class="mb-10">
+                <h1 class="glitch-text text-6xl editorial-text text-ink leading-[1.12]" data-text="Your work done.">Your work done.</h1>
+                <h1 class="glitch-text text-6xl editorial-text italic text-gray-400 leading-[1.12]" data-text="With Hypatia.">With Hypatia.</h1>
+            </div>
+            <p class="text-gray-500 text-lg max-w-md mb-12 font-light leading-relaxed">
+                An always-on intelligence layer across your email, models and project files.
+            </p>
+            <div class="max-w-[320px] space-y-4">
+                <input type="text" placeholder="Enterprise ID" class="w-full bg-white border border-border rounded-xl px-5 py-4 focus:outline-none focus:border-ink transition text-sm subtle-shadow">
+                <input type="password" placeholder="Password" class="w-full bg-white border border-border rounded-xl px-5 py-4 focus:outline-none focus:border-ink transition text-sm subtle-shadow">
+                <button id="login-btn" class="w-full bg-ink hover:bg-gray-800 text-white font-medium rounded-xl px-5 py-4 transition flex justify-between items-center mt-2">
+                    <span>Open Workspace</span>
+                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+        <div id="auth-right" class="w-1/2 h-full relative">
+            <div class="absolute right-10 top-1/2 -translate-y-1/2 text-[11px] font-mono uppercase text-gray-300 z-10" style="writing-mode: vertical-rl; letter-spacing: 0.45em;">Always on</div>
+        </div>
+    </div>
+
+    <!-- ============================================= -->
+    <!-- SCENE 2 : SPLASH — "Starting up."             -->
+    <!-- ============================================= -->
+    <div id="splash-scene" class="absolute inset-0 z-20 flex-col items-center justify-center hidden flex">
+        <!-- Reserved space: the orb floats here while it transforms -->
+        <div class="h-[46vh]"></div>
+        <h2 id="splash-title" class="glitch-text editorial-text text-5xl text-ink mb-6" data-text="Starting up.">Starting up.</h2>
+        <div id="splash-status" class="text-sm font-light shimmer-text mb-8 h-5">Authenticating credentials…</div>
+        <div id="progress-track" class="rounded-full mb-4"><div id="progress-fill"></div></div>
+        <div id="splash-pct" class="text-[10px] font-mono text-gray-400 tracking-[0.25em]">00</div>
+    </div>
+
+    <!-- ============================================= -->
+    <!-- SCENE 3 : CHAT                                -->
+    <!-- ============================================= -->
+    <div id="chat-scene" class="absolute inset-0 z-10 flex w-full h-full opacity-0 pointer-events-none">
+        <!-- Sidebar -->
+        <div id="chat-sidebar" class="w-72 bg-stone/90 backdrop-blur border-r border-border h-full flex flex-col pt-7 pb-5 px-4 z-30 transform -translate-x-full">
+            <div class="flex items-center justify-between px-2 mb-8">
+                <div class="flex items-center space-x-3">
+                    <div class="w-5 h-5 bg-ink rounded-full"></div>
+                    <span class="font-semibold text-base tracking-tight">Hypatia</span>
+                </div>
+                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Cowork</span>
+            </div>
+            <button class="w-full bg-surface border border-border hover:border-ink text-ink rounded-xl py-2.5 flex items-center justify-center space-x-2 transition subtle-shadow mb-5">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span class="font-medium text-sm">New session</span>
+            </button>
+            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] px-2 mb-3">Sessions · 24</div>
+            <div class="flex-1 overflow-y-auto space-y-1">
+                <div class="bg-white border border-border rounded-xl px-4 py-3 cursor-pointer subtle-shadow">
+                    <div class="text-sm font-medium text-ink truncate">RBC landing page build</div>
+                    <div class="text-xs text-gray-400 font-light truncate mt-1">Building the client-ready page…</div>
+                </div>
+                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition">
+                    <div class="text-sm font-medium text-gray-600 truncate">Q3 earnings call prep</div>
+                    <div class="text-xs text-gray-400 font-light truncate mt-1">Transcript recap + comp table</div>
+                </div>
+                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition">
+                    <div class="text-sm font-medium text-gray-600 truncate">Client onboarding flow</div>
+                    <div class="text-xs text-gray-400 font-light truncate mt-1">Email sequence drafts</div>
+                </div>
+            </div>
+            <div class="mt-auto pt-5 flex items-center space-x-3 px-3">
+                <div class="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium text-[11px]">SM</div>
+                <div class="text-sm font-medium text-ink truncate">Simo M.</div>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div id="chat-main" class="flex-1 flex flex-col h-full relative min-w-0 opacity-0 translate-y-6">
+            <div class="flex items-center justify-between px-10 py-5 border-b border-border bg-white/70 backdrop-blur-md">
+                <div>
+                    <h1 class="glitch-text editorial-text text-xl text-ink" data-text="New session">New session</h1>
+                    <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] mt-1">Session · just started</div>
+                </div>
+                <div id="engine-pill" class="flex items-center space-x-1.5 text-[11px] font-mono text-success bg-stone border border-border rounded-lg px-3 py-2">
+                    <div class="w-1.5 h-1.5 bg-success rounded-full"></div><span>READY</span>
+                </div>
+            </div>
+
+            <div class="flex-1 flex flex-col items-center justify-center px-8">
+                <div class="mb-10 text-center">
+                    <h2 class="glitch-text text-4xl editorial-text text-ink mb-3 min-h-[1.3em]" data-text="What are we working on, Simo?"><span id="greeting-text"></span><span class="type-cursor" id="greeting-cursor"></span></h2>
+                    <p class="text-gray-400 font-light text-sm tracking-wide">Describe the outcome. Hypatia will map the work.</p>
+                </div>
+            </div>
+
+            <div class="px-8 pb-6 pt-2">
+                <div class="max-w-3xl mx-auto">
+                    <div class="glass-panel rounded-panel p-3">
+                        <textarea rows="1" class="w-full px-4 pt-3 pb-2 text-[15px] text-ink focus:outline-none resize-none bg-transparent placeholder-gray-400 font-light" placeholder="Message Hypatia — Enter to send, Shift+Enter for newline"></textarea>
+                        <div class="flex items-center justify-between px-2 pb-1 hairline-top pt-2.5">
+                            <div class="flex items-center space-x-2">
+                                <button class="p-2 text-gray-400 hover:text-ink transition rounded-lg hover:bg-stone"><i data-lucide="paperclip" class="w-4 h-4"></i></button>
+                                <button class="p-2 text-gray-400 hover:text-ink transition rounded-lg hover:bg-stone"><i data-lucide="mic" class="w-4 h-4"></i></button>
+                            </div>
+                            <div class="flex items-center space-x-3">
+                                <div id="composer-orb-slot" class="w-7 h-7"></div>
+                                <button class="p-2 bg-ink text-white rounded-lg hover:bg-gray-800 transition shadow-sm">
+                                    <i data-lucide="arrow-up" class="w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button id="replay-btn" class="fixed bottom-5 right-5 z-50 hidden items-center space-x-2 text-[10px] font-mono uppercase tracking-[0.2em] text-gray-400 hover:text-ink border border-border rounded-lg px-3 py-2 bg-white/80 backdrop-blur transition flex">
+        <i data-lucide="rotate-ccw" class="w-3 h-3"></i><span>Replay</span>
+    </button>
+
+<script>
+lucide.createIcons();
+
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// =====================================================================
+// WEBGL — ONE SCENE, TWO BODIES
+// The orb (auth) and the pulse (chat) coexist. The splash is where the
+// orb dies and the pulse is born from its silhouette.
+// =====================================================================
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 9);
+
+// ---- Orb (Royal Gloss + uFade for the dissolve) ---------------------
+const SNOISE = `
+vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+      i.z + vec4(0.0, i1.z, i2.z, 1.0))
+    + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+    + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0)*2.0 + 1.0;
+  vec4 s1 = floor(b1)*2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+`;
+
+const orbUniforms = {
+    uTime:   { value: 0 },
+    uAmp:    { value: 0.22 },
+    uFreq:   { value: 0.95 },
+    uSpeed:  { value: REDUCED_MOTION ? 0.08 : 0.32 },
+    uEnergy: { value: 0 },
+    uGlitch: { value: 0 },
+    uFade:   { value: 1 },   // 1 = solid, 0 = dissolved
+};
+
+const orbGroup = new THREE.Group();
+const orbMesh = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.55, 96),
+    new THREE.ShaderMaterial({
+        uniforms: orbUniforms,
+        transparent: true,
+        vertexShader: SNOISE + `
+            uniform float uTime, uAmp, uFreq, uSpeed, uGlitch;
+            varying vec3 vN; varying vec3 vV; varying float vD;
+            float displace(vec3 dir, float t) {
+                float n1 = snoise(dir * uFreq + vec3(t * 0.7, t * 0.55, t * 0.4));
+                float n2 = snoise(dir * uFreq * 2.0 + vec3(-t * 0.5, t * 0.7, t * 0.4)) * 0.15;
+                return (n1 + n2) * uAmp;
+            }
+            vec3 ortho(vec3 v){ return normalize(abs(v.x) > abs(v.z) ? vec3(-v.y, v.x, 0.0) : vec3(0.0, -v.z, v.y)); }
+            void main() {
+                float t = uTime * uSpeed;
+                vec3 dir = normalize(position);
+                float r = length(position);
+                float d = displace(dir, t);
+                vec3 p = dir * (r + d);
+                float e = 0.08;
+                vec3 tg = ortho(dir), bt = normalize(cross(dir, tg));
+                vec3 d1 = normalize(dir + tg * e), d2 = normalize(dir + bt * e);
+                vec3 p1 = d1 * (r + displace(d1, t)), p2 = d2 * (r + displace(d2, t));
+                vec3 n = normalize(cross(p1 - p, p2 - p));
+                if (uGlitch > 0.001) {
+                    float bandId = floor((dir.y + 1.0) * 7.0);
+                    float frameQ = floor(uTime * 24.0);
+                    float tear = step(0.62, fract(sin(bandId * 91.7 + frameQ * 7.31) * 43758.5453));
+                    p.x += uGlitch * tear * 0.16 * sin(bandId * 3.0 + frameQ);
+                }
+                vD = d;
+                vN = normalize(normalMatrix * n);
+                vec4 mv = modelViewMatrix * vec4(p, 1.0);
+                vV = normalize(-mv.xyz);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            uniform float uTime, uEnergy, uGlitch, uFade;
+            varying vec3 vN; varying vec3 vV; varying float vD;
+            void main() {
+                vec3 N = normalize(vN), V = normalize(vV);
+                float ndv = clamp(dot(N, V), 0.0, 1.0);
+                float fresnel = pow(1.0 - ndv, 2.2);
+                vec3 deep = vec3(0.02, 0.07, 0.38);
+                vec3 mid  = vec3(0.10, 0.32, 0.92);
+                vec3 ice  = vec3(0.86, 0.94, 1.00);
+                float band = 0.5 + 0.5 * sin(vD * 9.0 + ndv * 4.0 + uTime * 0.15);
+                vec3 film = mix(mid, ice, smoothstep(0.35, 0.95, band));
+                vec3 c = mix(deep, film, 0.25 + fresnel * (0.6 + uEnergy * 0.2));
+                float streak = smoothstep(0.10, 0.30, vD) * (0.5 + 0.5 * ndv);
+                c = mix(c, ice, streak * 0.55);
+                vec3 L = normalize(vec3(0.5, 0.8, 0.6));
+                c += vec3(1.0) * pow(max(dot(reflect(-L, N), V), 0.0), 60.0) * 1.1;
+                vec3 R = normalize(vec3(-0.7, -0.3, 0.4));
+                c += vec3(0.7, 0.85, 1.0) * pow(max(dot(reflect(-R, N), V), 0.0), 28.0) * 0.35;
+                c += mix(mid, ice, 0.6) * pow(1.0 - ndv, 4.0) * 0.45;
+                if (uGlitch > 0.001) {
+                    float scan = sin(gl_FragCoord.y * 1.7 + uTime * 90.0);
+                    c += vec3(0.08, 0.25, 0.85) * uGlitch * scan * 0.14;
+                    float skew = sin(gl_FragCoord.y * 0.6);
+                    c.r += uGlitch * skew * 0.10;
+                    c.b -= uGlitch * skew * 0.07;
+                }
+                gl_FragColor = vec4(c, uFade);
+            }
+        `,
+    })
+);
+orbGroup.add(orbMesh);
+scene.add(orbGroup);
+
+// ---- Pulse (born during the splash) ---------------------------------
+const PULSE = { bars: 96, r0: 0.85 };
+const pulseParams = { chaos: 0.08, speed: 0.9, energy: 0, glitch: 0, birth: 0 };
+// birth: 0 = not yet born (invisible), 1 = fully formed
+
+const pulseGroup = new THREE.Group();
+const pulseGeo = new THREE.BufferGeometry();
+pulseGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PULSE.bars * 2 * 3), 3));
+{
+    const colors = new Float32Array(PULSE.bars * 2 * 3);
+    const cBlue = new THREE.Color('#0051a5');
+    const cMid  = new THREE.Color('#1a66ff');
+    const cGold = new THREE.Color('#e8a821');
+    for (let i = 0; i < PULSE.bars; i++) {
+        const c = i % 16 === 0 ? cGold : (i % 2 === 0 ? cBlue : cMid);
+        for (let k = 0; k < 2; k++) {
+            colors[(i * 2 + k) * 3]     = c.r;
+            colors[(i * 2 + k) * 3 + 1] = c.g;
+            colors[(i * 2 + k) * 3 + 2] = c.b;
+        }
+    }
+    pulseGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+const pulseMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 });
+pulseGroup.add(new THREE.LineSegments(pulseGeo, pulseMat));
+
+const pulseInnerMat = new THREE.MeshBasicMaterial({ color: 0x0d0d0f, transparent: true, opacity: 0 });
+pulseGroup.add(new THREE.Mesh(new THREE.TorusGeometry(PULSE.r0 - 0.04, 0.01, 8, 128), pulseInnerMat));
+pulseGroup.visible = false;
+scene.add(pulseGroup);
+
+function pulseUpdate(t) {
+    const p = pulseGeo.attributes.position.array;
+    const { chaos, speed, glitch, birth } = pulseParams;
+    for (let i = 0; i < PULSE.bars; i++) {
+        const a = (i / PULSE.bars) * Math.PI * 2;
+        const wave = Math.sin(a * 3 + t * speed) * 0.5 + 0.5;
+        const jitter = Math.sin(a * 17.0 + t * speed * 7.3) * chaos;
+        let h = (0.06 + wave * 0.16 + Math.abs(jitter) * 0.6) * birth;
+        if (glitch > 0.001) {
+            const g = Math.sin(i * 91.7 + Math.floor(t * 24) * 7.3) * 43758.5453;
+            const frac = g - Math.floor(g);
+            if (frac > 0.8) h += glitch * 0.5;
+            else if (frac < 0.12) h *= 1.0 - glitch;
+        }
+        const cx = Math.cos(a), cy = Math.sin(a);
+        p[(i * 2) * 3]     = cx * PULSE.r0;
+        p[(i * 2) * 3 + 1] = cy * PULSE.r0;
+        p[(i * 2) * 3 + 2] = 0;
+        p[(i * 2 + 1) * 3]     = cx * (PULSE.r0 + h);
+        p[(i * 2 + 1) * 3 + 1] = cy * (PULSE.r0 + h);
+        p[(i * 2 + 1) * 3 + 2] = 0;
+    }
+    pulseGeo.attributes.position.needsUpdate = true;
+    pulseMat.opacity = 0.9 * birth;
+    pulseInnerMat.opacity = (0.2 + pulseParams.energy * 0.25) * birth;
+    pulseGroup.rotation.z = t * 0.05 + (1 - birth) * 2.5; // born spinning, settles
+}
+
+// ---- Placement helpers ---------------------------------------------
+function ndcToWorld(nx, ny) {
+    const v = new THREE.Vector3(nx, ny, 0.5).unproject(camera);
+    const dir = v.sub(camera.position).normalize();
+    const t = -camera.position.z / dir.z;
+    return camera.position.clone().add(dir.multiplyScalar(t));
+}
+
+// Pulse chases a DOM anchor once the chat phase starts
+let pulseAnchorEl = null;
+function pulseAnchorTarget() {
+    const r = pulseAnchorEl.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const nx = (cx / window.innerWidth) * 2 - 1;
+    const ny = -(cy / window.innerHeight) * 2 + 1;
+    const worldH = 2 * Math.tan((camera.fov * Math.PI / 180) / 2) * camera.position.z;
+    return {
+        pos: ndcToWorld(nx, ny),
+        scale: (r.height * (worldH / window.innerHeight)) / 2.6,
+    };
+}
+
+// ---- Loop -----------------------------------------------------------
+const clock = new THREE.Clock();
+let rafId = null;
+let mouseX = 0, mouseY = 0;
+document.addEventListener('mousemove', (e) => {
+    mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+    mouseY = (e.clientY / window.innerHeight) * 2 - 1;
+});
+
+function frame() {
+    rafId = requestAnimationFrame(frame);
+    const t = clock.getElapsedTime();
+    orbUniforms.uTime.value = t;
+
+    if (orbGroup.visible && !REDUCED_MOTION) {
+        orbGroup.rotation.y += ((mouseX * 0.35) - orbGroup.rotation.y) * 0.03;
+        orbGroup.rotation.x += ((mouseY * 0.2) - orbGroup.rotation.x) * 0.03;
+        orbMesh.rotation.y = t * 0.05;
+    }
+
+    if (pulseGroup.visible) {
+        pulseUpdate(t);
+        if (pulseAnchorEl) {
+            const target = pulseAnchorTarget();
+            pulseGroup.position.lerp(target.pos, 0.14);
+            const s = pulseGroup.scale.x + (target.scale - pulseGroup.scale.x) * 0.14;
+            pulseGroup.scale.setScalar(s);
+        }
+    }
+
+    renderer.render(scene, camera);
+}
+frame();
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(rafId); rafId = null; }
+    else if (rafId === null) { clock.getDelta(); frame(); }
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    if (!pulseAnchorEl) positionForPhase(true);
+});
+
+// ---- Phase positions ------------------------------------------------
+let phase = 'auth'; // auth | splash | chat
+const glowEl = document.getElementById('orb-glow');
+
+function positionForPhase(immediate) {
+    if (phase === 'auth') {
+        const w = ndcToWorld(0.5, 0.05);
+        orbGroup.position.copy(w);
+        orbGroup.scale.setScalar(1);
+        placeGlow(0.5, 0.05, 1, immediate);
+    } else if (phase === 'splash') {
+        placeGlow(0, 0.28, 0.8, immediate);
+    }
+}
+function placeGlow(nx, ny, scale, immediate) {
+    const px = (nx * 0.5 + 0.5) * window.innerWidth;
+    const py = (1 - (ny * 0.5 + 0.5)) * window.innerHeight;
+    const props = { left: px, top: py, width: `${56 * scale}vmin`, height: `${56 * scale}vmin` };
+    if (immediate) Object.assign(glowEl.style, { left: px + 'px', top: py + 'px', width: props.width, height: props.height });
+    else gsap.to(glowEl, { ...props, duration: 1.4, ease: 'power3.inOut' });
+}
+positionForPhase(true);
+
+function glitchDOM() {
+    document.querySelectorAll('.glitch-text').forEach(el => {
+        el.classList.add('glitching');
+        setTimeout(() => el.classList.remove('glitching'), 260);
+    });
+}
+function orbGlitch(s = 1) {
+    if (REDUCED_MOTION) return;
+    gsap.fromTo(orbUniforms.uGlitch, { value: s }, { value: 0, duration: 0.32, ease: 'steps(4)' });
+    glitchDOM();
+}
+
+// Entrance
+gsap.from('#auth-left > *', { opacity: 0, y: 18, duration: 1, stagger: 0.08, ease: 'power2.out', delay: 0.2 });
+gsap.from(orbGroup.scale, { x: 0.001, y: 0.001, z: 0.001, duration: 2, ease: 'expo.out', delay: 0.3 });
+
+// =====================================================================
+// THE TRANSITION — auth → splash (metamorphosis) → chat
+// =====================================================================
+const SPLASH_STATUSES = [
+    'Authenticating credentials…',
+    'Restoring sessions…',
+    'Warming local engine…',
+    'Synchronizing context…',
+];
+
+document.getElementById('login-btn').addEventListener('click', startTransition);
+document.getElementById('replay-btn').addEventListener('click', () => location.reload());
+
+function startTransition() {
+    const loginBtn = document.getElementById('login-btn');
+    loginBtn.disabled = true;
+    loginBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Opening…</span>';
+    lucide.createIcons();
+
+    const tl = gsap.timeline();
+
+    // ---------- ACT 1 · auth exits, orb travels to center stage ------
+    tl.add(() => orbGlitch(0.8), 0.15);
+    tl.to('#auth-left', { xPercent: -100, opacity: 0, duration: 0.9, ease: 'power3.inOut' }, 0.3);
+    tl.to('#auth-right', { opacity: 0, duration: 0.5 }, 0.3);
+
+    const splashOrbPos = ndcToWorld(0, 0.28);
+    tl.to(orbGroup.position, { x: splashOrbPos.x, y: splashOrbPos.y, z: splashOrbPos.z, duration: 1.4, ease: 'power3.inOut' }, 0.35);
+    tl.to(orbGroup.scale, { x: 0.62, y: 0.62, z: 0.62, duration: 1.4, ease: 'power3.inOut' }, 0.35);
+    tl.add(() => {
+        phase = 'splash';
+        positionForPhase(false);
+        document.getElementById('auth-scene').style.display = 'none';
+        showSplash();
+    }, 1.1);
+
+    // ---------- ACT 2 · splash: status cycle, orb charges ------------
+    tl.add(() => gsap.to(orbUniforms.uAmp, { value: 0.42, duration: 1.2 }), 1.4);
+    tl.add(() => gsap.to(orbUniforms.uSpeed, { value: REDUCED_MOTION ? 0.2 : 1.05, duration: 1.2 }), 1.4);
+    tl.add(() => gsap.to(orbUniforms.uEnergy, { value: 1, duration: 1.2 }), 1.4);
+
+    // ---------- ACT 3 · metamorphosis at center stage ----------------
+    // Charge: orb tightens and overdrives…
+    tl.add(() => {
+        gsap.to(orbUniforms.uAmp, { value: 0.55, duration: 0.5, ease: 'power2.in' });
+        gsap.to(orbUniforms.uFreq, { value: 1.6, duration: 0.5, ease: 'power2.in' });
+        gsap.to(orbGroup.scale, { x: 0.5, y: 0.5, z: 0.5, duration: 0.5, ease: 'power2.in' });
+    }, 3.5);
+
+    // …flash — the orb implodes, the pulse is born from its silhouette.
+    tl.add(() => {
+        orbGlitch(1);
+        gsap.fromTo('#morph-flash',
+            { opacity: 0, scale: 0.6 },
+            { opacity: 1, scale: 1.15, duration: 0.18, ease: 'power2.out', onComplete: () => {
+                gsap.to('#morph-flash', { opacity: 0, scale: 1.5, duration: 0.6, ease: 'power2.out' });
+            }});
+
+        // Orb dies: implode + dissolve
+        gsap.to(orbGroup.scale, { x: 0.30, y: 0.30, z: 0.30, duration: 0.4, ease: 'power3.in' });
+        gsap.to(orbUniforms.uFade, { value: 0, duration: 0.4, ease: 'power2.in', onComplete: () => {
+            orbGroup.visible = false;
+        }});
+
+        // Pulse born: same spot, same silhouette radius as the dying orb.
+        // Orb visual radius ≈ 1.55 × 0.30; ring r0 = 0.85 → matching scale.
+        const bornScale = (1.55 * 0.42) / PULSE.r0;
+        pulseGroup.position.copy(orbGroup.position);
+        pulseGroup.scale.setScalar(bornScale);
+        pulseGroup.visible = true;
+        pulseParams.chaos = 0.6;
+        pulseParams.speed = 3.2;
+        gsap.to(pulseParams, { birth: 1, duration: 0.7, ease: 'expo.out', delay: 0.12 });
+        gsap.fromTo(pulseParams, { glitch: 0.8 }, { glitch: 0, duration: 0.5, ease: 'steps(4)', delay: 0.12 });
+        // Then the newborn calms into a heartbeat
+        gsap.to(pulseParams, { chaos: 0.08, speed: 0.9, duration: 1.6, ease: 'power2.out', delay: 0.8 });
+    }, 4.0);
+
+    // ---------- ACT 4 · splash resolves, chat enters -----------------
+    tl.add(() => {
+        setSplashStatus('Ready.');
+        document.getElementById('splash-title').textContent = 'Welcome back.';
+        document.getElementById('splash-title').dataset.text = 'Welcome back.';
+        glitchDOM();
+    }, 4.9);
+
+    tl.add(() => {
+        gsap.to('#splash-scene', { opacity: 0, y: -22, duration: 0.7, ease: 'power2.inOut', onComplete: () => {
+            document.getElementById('splash-scene').style.display = 'none';
+        }});
+        gsap.to(glowEl, { opacity: 0, duration: 0.7 });
+        enterChat();
+    }, 5.9);
+}
+
+// ---- Splash internals ----------------------------------------------
+let statusTimer = null;
+function showSplash() {
+    const splash = document.getElementById('splash-scene');
+    splash.classList.remove('hidden');
+    gsap.fromTo(splash, { opacity: 0 }, { opacity: 1, duration: 0.6 });
+    gsap.fromTo('#splash-title', { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.8, ease: 'power3.out', delay: 0.1 });
+
+    // Status cycle + progress
+    let idx = 0;
+    setSplashStatus(SPLASH_STATUSES[0]);
+    statusTimer = setInterval(() => {
+        idx++;
+        if (idx < SPLASH_STATUSES.length) setSplashStatus(SPLASH_STATUSES[idx]);
+        else clearInterval(statusTimer);
+    }, 1050);
+
+    const pct = { v: 0 };
+    gsap.to(pct, { v: 100, duration: 4.4, ease: 'power1.inOut', onUpdate: () => {
+        document.getElementById('progress-fill').style.width = pct.v + '%';
+        document.getElementById('splash-pct').textContent = String(Math.round(pct.v)).padStart(2, '0');
+    }});
+}
+function setSplashStatus(text) {
+    const el = document.getElementById('splash-status');
+    gsap.to(el, { opacity: 0, duration: 0.18, onComplete: () => {
+        el.textContent = text;
+        gsap.to(el, { opacity: 1, duration: 0.22 });
+    }});
+}
+
+// ---- Chat entrance --------------------------------------------------
+function enterChat() {
+    phase = 'chat';
+    const chat = document.getElementById('chat-scene');
+    chat.style.pointerEvents = 'auto';
+    gsap.to(chat, { opacity: 1, duration: 0.2 });
+    gsap.to('#chat-sidebar', { x: 0, duration: 1, ease: 'power3.out', delay: 0.1 });
+    gsap.to('#chat-main', { opacity: 1, y: 0, duration: 1, ease: 'power3.out', delay: 0.25 });
+
+    // The newborn pulse flies home into the composer.
+    setTimeout(() => {
+        pulseAnchorEl = document.getElementById('composer-orb-slot');
+    }, 500);
+
+    // Greeting types in; replay affordance appears.
+    setTimeout(typeGreeting, 900);
+    setTimeout(() => {
+        const btn = document.getElementById('replay-btn');
+        btn.classList.remove('hidden');
+        gsap.from(btn, { opacity: 0, duration: 0.5 });
+    }, 2200);
+}
+
+function typeGreeting() {
+    const full = 'What are we working on, Simo?';
+    const target = document.getElementById('greeting-text');
+    const cursor = document.getElementById('greeting-cursor');
+    if (REDUCED_MOTION) {
+        target.textContent = full;
+        cursor.style.display = 'none';
+        return;
+    }
+    let i = 0;
+    (function tick() {
+        i = Math.min(full.length, i + 1 + Math.floor(Math.random() * 2));
+        target.textContent = full.slice(0, i);
+        if (i < full.length) setTimeout(tick, 30 + Math.random() * 55);
+        else setTimeout(() => { cursor.style.display = 'none'; }, 1200);
+    })();
+}
+</script>
+</body>
+</html>
