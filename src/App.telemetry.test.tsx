@@ -27,20 +27,25 @@ vi.mock("@/contexts/UpdateProvider", () => ({
 }));
 
 vi.mock("@/hooks/usePiStream", () => ({
+	INITIAL_STATE: {
+		messages: [],
+		streamingMessage: null,
+		isRunning: false,
+		status: "idle",
+		error: null,
+		queue: { steering: [], followUp: [] },
+		streamSegments: [],
+		queuedKinds: {},
+		promptEchoConsumed: false,
+	},
 	usePiStream: () => ({
-		state: {
-			messages: [],
-			queue: [],
-			isStreaming: false,
-			model: undefined,
-			artifacts: {},
-		},
+		streams: {},
 		startStream: vi.fn(),
 		abortStream: vi.fn(),
 		steerStream: vi.fn(),
 		followUpStream: vi.fn(),
 		clearQueue: vi.fn(),
-		dispatch: vi.fn(),
+		forgetSession: vi.fn(),
 	}),
 }));
 

@@ -537,6 +537,37 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 	}
 }
 
+/**
+ * Multi-session wrapper state: one StreamState per open session, keyed by
+ * session id (the pi session file path). streamReducer itself stays
+ * single-session — this just routes each action to the right slot.
+ */
+export type MultiStreamState = Record<string, StreamState>;
+
+type ScopedStreamAction = StreamAction & { sessionId: string };
+/** Forgets a session's stream state entirely (map key removed, not reset to
+ * an inert entry) — used when a session is deleted, not on ordinary tab
+ * switches (switching tabs must never touch another session's state at
+ * all — that's the bug this whole hook was rewritten to fix). */
+type ForgetSessionAction = { type: "FORGET_SESSION"; sessionId: string };
+
+export function multiStreamReducer(
+	state: MultiStreamState,
+	action: ScopedStreamAction | ForgetSessionAction,
+): MultiStreamState {
+	if (action.type === "FORGET_SESSION") {
+		if (!(action.sessionId in state)) return state;
+		const next = { ...state };
+		delete next[action.sessionId];
+		return next;
+	}
+	const { sessionId, ...rest } = action;
+	const prevForSession = state[sessionId] ?? INITIAL_STATE;
+	const nextForSession = streamReducer(prevForSession, rest as StreamAction);
+	if (nextForSession === prevForSession) return state;
+	return { ...state, [sessionId]: nextForSession };
+}
+
 function extractToolCallInfo(tc: {
 	id: string;
 	name?: string;
@@ -552,13 +583,25 @@ function extractToolCallInfo(tc: {
 
 export interface UsePiStreamOptions {
 	/** Called when the agent invokes the show_artifact tool — routes into the
-	 * playground panel's own store (usePlaygroundArtifacts), not this reducer. */
+	 * playground panel's own store (usePlaygroundArtifacts), not this reducer.
+	 * Not session-scoped yet: the playground panel is a single app-wide store
+	 * regardless of which session produced the artifact (out of scope for the
+	 * multi-session concurrency work — see docs/plans/multi-session-concurrency.md). */
 	onShowArtifact?: (payload: PlaygroundArtifactPayload) => void;
 }
 
+/**
+ * Tracks EVERY session's stream state simultaneously, keyed by session id —
+ * not just "the current conversation." This is what lets a background
+ * session keep streaming while the user views/works in a different one:
+ * switching which session is displayed never touches another session's
+ * entry in `streams`, and starting a prompt in one session never resets or
+ * interferes with any other session's state. See
+ * docs/plans/multi-session-concurrency.md.
+ */
 export function usePiStream(options?: UsePiStreamOptions) {
-	const [state, dispatch] = useReducer(streamReducer, INITIAL_STATE);
-	const [toolPhase, setToolPhase] = useState<ToolPhase | null>(null);
+	const [streams, dispatch] = useReducer(multiStreamReducer, {} as MultiStreamState);
+	const [toolPhases, setToolPhases] = useState<Record<string, ToolPhase | null>>({});
 
 	// Kept in a ref so startStream's useCallback below doesn't need
 	// onShowArtifact in its deps — the channel handler always calls
@@ -569,8 +612,12 @@ export function usePiStream(options?: UsePiStreamOptions) {
 		onShowArtifactRef.current = options?.onShowArtifact;
 	}, [options?.onShowArtifact]);
 
-	const startStream = useCallback(async (text: string) => {
-		dispatch({ type: "START_STREAM", prompt: text });
+	const startStream = useCallback(async (sessionId: string, text: string) => {
+		const d = (action: StreamAction) => dispatch({ ...action, sessionId });
+		const setPhase = (phase: ToolPhase | null) =>
+			setToolPhases((prev) => ({ ...prev, [sessionId]: phase }));
+
+		d({ type: "START_STREAM", prompt: text });
 
 		const channel = new Channel<PiEvent>();
 		channel.onmessage = (event: PiEvent) => {
@@ -581,7 +628,7 @@ export function usePiStream(options?: UsePiStreamOptions) {
 						const ame = msgEvent.assistantMessageEvent;
 
 						if (msgEvent.message?.model || msgEvent.message?.provider) {
-							dispatch({
+							d({
 								type: "MODEL_INFO",
 								model: msgEvent.message.model || "",
 								provider: msgEvent.message.provider || "",
@@ -590,10 +637,10 @@ export function usePiStream(options?: UsePiStreamOptions) {
 
 						switch (ame.type) {
 							case "thinking_delta":
-								dispatch({ type: "THINKING_DELTA", delta: ame.delta });
+								d({ type: "THINKING_DELTA", delta: ame.delta });
 								break;
 							case "text_delta":
-								dispatch({ type: "TEXT_DELTA", delta: ame.delta });
+								d({ type: "TEXT_DELTA", delta: ame.delta });
 								break;
 							/**
 							 * text_end — pi emits this when a streaming content block
@@ -602,12 +649,12 @@ export function usePiStream(options?: UsePiStreamOptions) {
 							 */
 							case "text_end":
 								if (ame.content) {
-									dispatch({ type: "TEXT_END", content: ame.content });
+									d({ type: "TEXT_END", content: ame.content });
 								}
 								break;
 							case "toolcall_end": {
 								const tc = ame.toolCall;
-								dispatch({
+								d({
 									type: "TOOL_CALL_START",
 									toolCall: extractToolCallInfo(tc),
 								});
@@ -618,7 +665,7 @@ export function usePiStream(options?: UsePiStreamOptions) {
 								// a generic placeholder. Provider 400/500 errors
 								// carry the API response in `reason` or `message`,
 								// not just "aborted".
-								dispatch({
+								d({
 									type: "STREAM_ERROR",
 									error:
 										(ame as unknown as { message?: string }).message || ame.reason || "API error",
@@ -630,7 +677,7 @@ export function usePiStream(options?: UsePiStreamOptions) {
 
 					case "message_start": {
 						if (event.message?.role === "assistant") {
-							dispatch({ type: "TURN_RESET" });
+							d({ type: "TURN_RESET" });
 						} else if (event.message?.role === "user") {
 							// SDK-injected user message: the prompt echo (skipped once)
 							// or a delivered steer/follow-up. Extract its text.
@@ -638,14 +685,14 @@ export function usePiStream(options?: UsePiStreamOptions) {
 								.filter((c) => c.type === "text")
 								.map((c) => (c as { text: string }).text)
 								.join("");
-							dispatch({ type: "USER_MESSAGE_STARTED", content });
+							d({ type: "USER_MESSAGE_STARTED", content });
 						}
 						break;
 					}
 
 					case "tool_execution_start": {
 						const te = event as PiToolExecutionStartEvent;
-						setToolPhase({
+						setPhase({
 							type: "calling",
 							toolName: te.toolName,
 							args: te.args as Record<string, unknown>,
@@ -656,18 +703,18 @@ export function usePiStream(options?: UsePiStreamOptions) {
 					case "tool_execution_update": {
 						const te = event as PiToolExecutionUpdateEvent;
 						const partialText = (te.partialResult?.content || []).map((c) => c.text).join("");
-						dispatch({
+						d({
 							type: "TOOL_CALL_UPDATE",
 							id: te.toolCallId,
 							result: partialText,
 							status: "running",
 						});
-						dispatch({
+						d({
 							type: "TOOL_PARTIAL_OUTPUT",
 							id: te.toolCallId,
 							partialOutput: partialText,
 						});
-						setToolPhase({
+						setPhase({
 							type: "executing",
 							toolName: te.toolName,
 							partialOutput: partialText,
@@ -677,7 +724,7 @@ export function usePiStream(options?: UsePiStreamOptions) {
 
 					case "tool_execution_end": {
 						const te = event as PiToolExecutionEndEvent;
-						dispatch({
+						d({
 							type: "TOOL_CALL_UPDATE",
 							id: te.toolCallId,
 							result: (te.result?.content || []).map((c) => c.text).join(""),
@@ -685,7 +732,7 @@ export function usePiStream(options?: UsePiStreamOptions) {
 							isError: te.isError,
 							details: te.result?.details as Record<string, unknown> | undefined,
 						});
-						setToolPhase(
+						setPhase(
 							te.isError
 								? { type: "error", toolName: te.toolName, message: "Tool failed" }
 								: { type: "done", toolName: te.toolName },
@@ -701,13 +748,13 @@ export function usePiStream(options?: UsePiStreamOptions) {
 					}
 
 					case "message_end": {
-						dispatch({ type: "MESSAGE_END" });
+						d({ type: "MESSAGE_END" });
 						break;
 					}
 
 					case "agent_end":
 					case "done":
-						dispatch({ type: "STREAM_COMPLETE" });
+						d({ type: "STREAM_COMPLETE" });
 						break;
 
 					case "error": {
@@ -720,7 +767,7 @@ export function usePiStream(options?: UsePiStreamOptions) {
 							? ` (${errEvent.provider}${errEvent.model ? `/${errEvent.model}` : ""})`
 							: "";
 						const hint = errEvent.retryable ? " — retrying may help" : "";
-						dispatch({
+						d({
 							type: "STREAM_ERROR",
 							error: `${base}${where}${hint}`,
 						});
@@ -737,7 +784,7 @@ export function usePiStream(options?: UsePiStreamOptions) {
 							steering?: string[];
 							followUp?: string[];
 						};
-						dispatch({
+						d({
 							type: "QUEUE_UPDATE",
 							steering: qe.steering ?? [],
 							followUp: qe.followUp ?? [],
@@ -751,19 +798,19 @@ export function usePiStream(options?: UsePiStreamOptions) {
 		};
 
 		try {
-			await invoke("send_prompt", { text, ch: channel });
+			await invoke("send_prompt", { text, sessionId, ch: channel });
 		} catch (err) {
-			dispatch({
+			d({
 				type: "STREAM_ERROR",
 				error: err instanceof Error ? err.message : String(err),
 			});
 		}
 	}, []);
 
-	const abortStream = useCallback(async () => {
-		dispatch({ type: "ABORT_STREAM" });
+	const abortStream = useCallback(async (sessionId: string) => {
+		dispatch({ type: "ABORT_STREAM", sessionId });
 		try {
-			await invoke("abort_prompt");
+			await invoke("abort_prompt", { sessionId });
 		} catch {
 			// ignore
 		}
@@ -778,13 +825,13 @@ export function usePiStream(options?: UsePiStreamOptions) {
 	 * to surface a stack trace mid-conversation. Future PR may surface them
 	 * as a transient toast.
 	 */
-	const steerStream = useCallback(async (text: string) => {
+	const steerStream = useCallback(async (sessionId: string, text: string) => {
 		// Optimistic: surface the user bubble immediately so the UI doesn't
 		// feel like the message vanished. The next queue_update event will
 		// reconcile (no-op if it matches; visible if SDK rejected text).
-		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "steer", text });
+		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "steer", text, sessionId });
 		try {
-			await invoke("steer_prompt", { text });
+			await invoke("steer_prompt", { text, sessionId });
 		} catch (err) {
 			log.warn("[cowork] steer_prompt rejected:", err);
 		}
@@ -795,10 +842,10 @@ export function usePiStream(options?: UsePiStreamOptions) {
 	 * Delivered after the agent finishes all current work. Same error
 	 * handling rationale as {@link steerStream}.
 	 */
-	const followUpStream = useCallback(async (text: string) => {
-		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "follow_up", text });
+	const followUpStream = useCallback(async (sessionId: string, text: string) => {
+		dispatch({ type: "QUEUE_OPTIMISTIC", kind: "follow_up", text, sessionId });
 		try {
-			await invoke("follow_up_prompt", { text });
+			await invoke("follow_up_prompt", { text, sessionId });
 		} catch (err) {
 			log.warn("[cowork] follow_up_prompt rejected:", err);
 		}
@@ -812,9 +859,9 @@ export function usePiStream(options?: UsePiStreamOptions) {
 	 * steerStream/followUpStream. Returns empty arrays on failure (so the
 	 * caller can render "nothing to edit" rather than crash).
 	 */
-	const clearQueue = useCallback(async (): Promise<QueueSnapshot> => {
+	const clearQueue = useCallback(async (sessionId: string): Promise<QueueSnapshot> => {
 		try {
-			const raw = (await invoke("clear_queue")) as {
+			const raw = (await invoke("clear_queue", { sessionId })) as {
 				steering?: string[];
 				followUp?: string[];
 			};
@@ -828,24 +875,36 @@ export function usePiStream(options?: UsePiStreamOptions) {
 		}
 	}, []);
 
+	/** Forgets a session's stream state entirely — call when a session is
+	 * deleted, never on an ordinary tab switch. */
+	const forgetSession = useCallback((sessionId: string) => {
+		dispatch({ type: "FORGET_SESSION", sessionId });
+	}, []);
+
 	/**
 	 * Global queue_update listener. The Rust event router emits
 	 * `queue_update` globally (separate from the prompt channel) so we
 	 * get queue mutations even when no prompt is active — e.g. a
-	 * follow-up dequeues right after STREAM_COMPLETE.
+	 * follow-up dequeues right after STREAM_COMPLETE. Tagged with
+	 * `sessionId` by the Rust layer (see lib.rs's tag_with_session_id) so
+	 * it can be routed to the right session instead of whichever one
+	 * happens to be displayed.
 	 */
-	// #268 — seed the reasoning level on mount and whenever the sidecar
-
 	useEffect(() => {
 		let unlisten: (() => void) | undefined;
-		listen<{ steering?: string[]; followUp?: string[] }>("queue_update", (evt) => {
-			const payload = evt.payload ?? {};
-			dispatch({
-				type: "QUEUE_UPDATE",
-				steering: payload.steering ?? [],
-				followUp: payload.followUp ?? [],
-			});
-		}).then((fn) => {
+		listen<{ steering?: string[]; followUp?: string[]; sessionId?: string }>(
+			"queue_update",
+			(evt) => {
+				const payload = evt.payload ?? {};
+				if (!payload.sessionId) return;
+				dispatch({
+					type: "QUEUE_UPDATE",
+					steering: payload.steering ?? [],
+					followUp: payload.followUp ?? [],
+					sessionId: payload.sessionId,
+				});
+			},
+		).then((fn) => {
 			unlisten = fn;
 		});
 		return () => {
@@ -854,13 +913,13 @@ export function usePiStream(options?: UsePiStreamOptions) {
 	}, []);
 
 	return {
-		state,
+		streams,
 		startStream,
 		abortStream,
 		steerStream,
 		followUpStream,
 		clearQueue,
-		dispatch,
-		toolPhase,
+		forgetSession,
+		toolPhases,
 	};
 }

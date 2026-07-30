@@ -29,6 +29,10 @@ struct SidecarState {
 
 struct PendingPrompt {
     channel: Channel<Value>,
+    /// Which agent session this prompt belongs to — used to filter the
+    /// event broadcast in `read_stdout` so a session's events only reach
+    /// its own channel, not every other concurrently-open session's.
+    session_id: String,
 }
 struct PendingRequest {
     sender: oneshot::Sender<Result<Value, String>>,
@@ -544,6 +548,29 @@ async fn spawn_sidecar(
     Ok((c, o, i))
 }
 
+/// Whether an incoming `type:"event"` line should be forwarded to a given
+/// pending prompt's channel. Extracted as a pure function so the
+/// multi-session filtering logic — the fix for events cross-contaminating
+/// between concurrently-open sessions — is unit-testable without a real
+/// sidecar process or Tauri channel.
+fn event_targets_session(event_session_id: Option<&str>, pending_session_id: &str) -> bool {
+    event_session_id == Some(pending_session_id)
+}
+
+/// Copies `sessionId` from the outer `{type:"event", sessionId, event}`
+/// envelope into a clone of the inner event payload before it's emitted as a
+/// GLOBAL Tauri event (ui_request/ui_cancel/oauth/queue_update) — these are
+/// broadcast app-wide rather than routed through a per-prompt Channel, so
+/// without this the frontend has no way to tell which session a background
+/// session's permission dialog or queue update belongs to.
+fn tag_with_session_id(payload: &Value, session_id: Option<&Value>) -> Value {
+    let mut tagged = payload.clone();
+    if let (Some(sid), Some(obj)) = (session_id, tagged.as_object_mut()) {
+        obj.insert("sessionId".to_string(), sid.clone());
+    }
+    tagged
+}
+
 async fn read_stdout(
     mut out: tokio::process::ChildStdout,
     pp: Arc<Mutex<HashMap<String, PendingPrompt>>>,
@@ -568,6 +595,7 @@ async fn read_stdout(
             }
             "event" => {
                 if let Some(e) = m.get("event") {
+                    let session_id = m.get("sessionId");
                     // Surface OAuth-flow events as Tauri events so the React
                     // UI can listen for them globally (separate from prompt
                     // streaming channels which are scoped to active prompts).
@@ -578,12 +606,14 @@ async fn read_stdout(
                         // render them regardless of which prompt is active.
                         // `ui_cancel` tells the UI to dismiss a dialog the
                         // sidecar already resolved itself (timeout/abort).
+                        // Tagged with sessionId so a background session's
+                        // permission-gate dialog is traceable to its session.
                         if kind.starts_with("oauth_")
                             || kind == "agent_reload_failed"
                             || kind == "ui_request"
                             || kind == "ui_cancel"
                         {
-                            let _ = app.emit(kind, e.clone());
+                            let _ = app.emit(kind, tag_with_session_id(e, session_id));
                         }
                     }
                     // Pi SDK session-level events (queue_update,
@@ -591,15 +621,25 @@ async fn read_stdout(
                     // `kind`. The composer (#201 PR 3) needs to know about
                     // queue mutations EVEN WHEN NO PROMPT IS ACTIVE — e.g.
                     // after the agent finishes and a follow-up dequeues.
-                    // Emit those globally so a `listen("queue_update", ...)`
-                    // in React works regardless of streaming state.
+                    // Emit those globally (tagged with sessionId) so a
+                    // `listen("queue_update", ...)` in React can filter to
+                    // the session it cares about, regardless of streaming
+                    // state.
                     if let Some(t) = e.get("type").and_then(|v| v.as_str()) {
                         if t == "queue_update" {
-                            let _ = app.emit("queue_update", e.clone());
+                            let _ = app.emit("queue_update", tag_with_session_id(e, session_id));
                         }
                     }
+                    // Only forward to the channel whose session this event
+                    // actually belongs to — the sidecar tags every event
+                    // envelope with `sessionId` (see prompt-runner.ts). Without
+                    // this filter, every concurrently-open session's channel
+                    // would receive every OTHER session's events too.
+                    let event_session_id = m.get("sessionId").and_then(|v| v.as_str());
                     for p in pp.lock().await.values() {
-                        let _ = p.channel.send(e.clone());
+                        if event_targets_session(event_session_id, &p.session_id) {
+                            let _ = p.channel.send(e.clone());
+                        }
                     }
                 }
             }
@@ -707,11 +747,11 @@ async fn get_models(s: State<'_, AppState>) -> Result<Value, String> {
 /// `{provider, id, name}` or null. The frontend mirrors this on startup so the
 /// model shown near the input matches the model that actually answers.
 #[tauri::command]
-async fn get_active_model(s: State<'_, AppState>) -> Result<Value, String> {
+async fn get_active_model(session_id: String, s: State<'_, AppState>) -> Result<Value, String> {
     let id = format!("gam-{}", next_request_id());
     scmd_r(
         &s,
-        &serde_json::json!({"type":"get_active_model","id":id}),
+        &serde_json::json!({"type":"get_active_model","id":id,"sessionId":session_id}),
         std::time::Duration::from_secs(10),
     )
     .await
@@ -720,6 +760,7 @@ async fn get_active_model(s: State<'_, AppState>) -> Result<Value, String> {
 #[tauri::command]
 async fn send_prompt(
     text: String,
+    session_id: String,
     ch: Channel<Value>,
     s: State<'_, AppState>,
 ) -> Result<(), String> {
@@ -727,20 +768,28 @@ async fn send_prompt(
         return Err("not ready".into());
     }
     let id = format!("p-{}", next_request_id());
-    s.pending_prompts
-        .lock()
-        .await
-        .insert(id.clone(), PendingPrompt { channel: ch });
+    s.pending_prompts.lock().await.insert(
+        id.clone(),
+        PendingPrompt {
+            channel: ch,
+            session_id: session_id.clone(),
+        },
+    );
     scmd(
         &s,
-        &serde_json::json!({"type":"prompt","id":id,"text":text}),
+        &serde_json::json!({"type":"prompt","id":id,"text":text,"sessionId":session_id}),
     )
     .await
 }
 
 #[tauri::command]
-async fn abort_prompt(s: State<'_, AppState>) -> Result<(), String> {
-    scmd(&s, &serde_json::json!({"type":"abort","id":"ab"})).await
+async fn abort_prompt(session_id: String, s: State<'_, AppState>) -> Result<(), String> {
+    let id = format!("ab-{}", next_request_id());
+    scmd(
+        &s,
+        &serde_json::json!({"type":"abort","id":id,"sessionId":session_id}),
+    )
+    .await
 }
 
 /// Build the JSONL payload sent to the sidecar for a `steer` command.
@@ -754,11 +803,12 @@ async fn abort_prompt(s: State<'_, AppState>) -> Result<(), String> {
 /// pi-coding-agent's `docs/rpc.md` for the protocol reference (cowork
 /// uses `text` rather than pi's `message` to stay internally consistent
 /// with the existing `prompt` command).
-fn build_steer_payload(id: &str, text: &str) -> Value {
+fn build_steer_payload(id: &str, text: &str, session_id: &str) -> Value {
     serde_json::json!({
         "type": "steer",
         "id": id,
         "text": text,
+        "sessionId": session_id,
     })
 }
 
@@ -800,20 +850,22 @@ fn get_install_context() -> Value {
 /// Issue #201 PR 3 — atomically drains the SDK queue. No `text` field: this
 /// command takes no input. The sidecar replies with the drained
 /// `{steering, followUp}` arrays in a `result` envelope.
-fn build_clear_queue_payload(id: &str) -> Value {
+fn build_clear_queue_payload(id: &str, session_id: &str) -> Value {
     serde_json::json!({
         "type": "clear_queue",
         "id": id,
+        "sessionId": session_id,
     })
 }
 
 /// Build the JSONL payload sent to the sidecar for a `follow_up` command.
 /// See [`build_steer_payload`] for rationale.
-fn build_follow_up_payload(id: &str, text: &str) -> Value {
+fn build_follow_up_payload(id: &str, text: &str, session_id: &str) -> Value {
     serde_json::json!({
         "type": "follow_up",
         "id": id,
         "text": text,
+        "sessionId": session_id,
     })
 }
 
@@ -824,14 +876,18 @@ fn build_follow_up_payload(id: &str, text: &str) -> Value {
 /// streaming channel — streaming events keep flowing on the existing
 /// prompt channel).
 #[tauri::command]
-async fn steer_prompt(text: String, s: State<'_, AppState>) -> Result<Value, String> {
+async fn steer_prompt(
+    text: String,
+    session_id: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
     if !s.sidecar.ready.load(Ordering::Acquire) {
         return Err("not ready".into());
     }
     let id = format!("st-{}", next_request_id());
     scmd_r(
         &s,
-        &build_steer_payload(&id, &text),
+        &build_steer_payload(&id, &text, &session_id),
         std::time::Duration::from_secs(5),
     )
     .await
@@ -840,14 +896,18 @@ async fn steer_prompt(text: String, s: State<'_, AppState>) -> Result<Value, Str
 /// Queue a follow-up message on the active session. Delivered after the
 /// agent has no more tool calls or steering messages pending.
 #[tauri::command]
-async fn follow_up_prompt(text: String, s: State<'_, AppState>) -> Result<Value, String> {
+async fn follow_up_prompt(
+    text: String,
+    session_id: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
     if !s.sidecar.ready.load(Ordering::Acquire) {
         return Err("not ready".into());
     }
     let id = format!("fu-{}", next_request_id());
     scmd_r(
         &s,
-        &build_follow_up_payload(&id, &text),
+        &build_follow_up_payload(&id, &text, &session_id),
         std::time::Duration::from_secs(5),
     )
     .await
@@ -858,14 +918,14 @@ async fn follow_up_prompt(text: String, s: State<'_, AppState>) -> Result<Value,
 /// composer calls this when the user presses Ctrl+↑ to recall pending
 /// queued messages for editing. Idempotent on an empty queue.
 #[tauri::command]
-async fn clear_queue(s: State<'_, AppState>) -> Result<Value, String> {
+async fn clear_queue(session_id: String, s: State<'_, AppState>) -> Result<Value, String> {
     if !s.sidecar.ready.load(Ordering::Acquire) {
         return Err("not ready".into());
     }
     let id = format!("cq-{}", next_request_id());
     scmd_r(
         &s,
-        &build_clear_queue_payload(&id),
+        &build_clear_queue_payload(&id, &session_id),
         std::time::Duration::from_secs(5),
     )
     .await
@@ -1515,8 +1575,48 @@ pub fn run() {
 mod tests {
     use super::{
         build_clear_queue_payload, build_follow_up_payload, build_install_context,
-        build_steer_payload,
+        build_steer_payload, event_targets_session, tag_with_session_id,
     };
+    use serde_json::json;
+
+    // ── Multi-session event routing (docs/plans/multi-session-concurrency.md) ──
+    // Regression coverage for the bug this filter fixes: before it, every
+    // concurrently-open session's channel received every OTHER session's
+    // events too (read_stdout broadcast unconditionally to every entry in
+    // pending_prompts).
+
+    #[test]
+    fn event_targets_session_matches_its_own_session_id() {
+        assert!(event_targets_session(Some("session-a"), "session-a"));
+    }
+
+    #[test]
+    fn event_targets_session_rejects_a_different_sessions_event() {
+        assert!(!event_targets_session(Some("session-a"), "session-b"));
+    }
+
+    #[test]
+    fn event_targets_session_rejects_an_untagged_event() {
+        // An event with no sessionId (shouldn't happen post-fix, but must
+        // not accidentally broadcast to every channel if it did).
+        assert!(!event_targets_session(None, "session-a"));
+    }
+
+    #[test]
+    fn tag_with_session_id_injects_the_field_without_losing_existing_ones() {
+        let payload = json!({"kind": "ui_request", "method": "confirm"});
+        let tagged = tag_with_session_id(&payload, Some(&json!("session-a")));
+        assert_eq!(tagged["sessionId"], "session-a");
+        assert_eq!(tagged["kind"], "ui_request");
+        assert_eq!(tagged["method"], "confirm");
+    }
+
+    #[test]
+    fn tag_with_session_id_leaves_payload_unchanged_when_no_session_id_is_available() {
+        let payload = json!({"kind": "ui_request"});
+        let tagged = tag_with_session_id(&payload, None);
+        assert_eq!(tagged, payload);
+    }
 
     // ── In-app updater install context (#271) ───────────────────────────
 
@@ -1554,18 +1654,20 @@ mod tests {
 
     #[test]
     fn steer_payload_uses_steer_type_with_text_and_id() {
-        let p = build_steer_payload("st-abc", "hi there");
+        let p = build_steer_payload("st-abc", "hi there", "session-1");
         assert_eq!(p["type"], "steer");
         assert_eq!(p["id"], "st-abc");
         assert_eq!(p["text"], "hi there");
+        assert_eq!(p["sessionId"], "session-1");
     }
 
     #[test]
     fn follow_up_payload_uses_follow_up_type_with_text_and_id() {
-        let p = build_follow_up_payload("fu-xyz", "after you finish");
+        let p = build_follow_up_payload("fu-xyz", "after you finish", "session-1");
         assert_eq!(p["type"], "follow_up");
         assert_eq!(p["id"], "fu-xyz");
         assert_eq!(p["text"], "after you finish");
+        assert_eq!(p["sessionId"], "session-1");
     }
 
     #[test]
@@ -1574,7 +1676,7 @@ mod tests {
         // be mangled by serialization. The Tauri → sidecar transport is
         // LF-delimited JSONL so embedded `\n` and Unicode line separators
         // must round-trip via JSON escaping.
-        let p = build_steer_payload("id", "line one\nline two — café");
+        let p = build_steer_payload("id", "line one\nline two — café", "session-1");
         let serialized = serde_json::to_string(&p).unwrap();
         // The newline inside the user's text is escaped, never raw.
         assert!(
@@ -1586,19 +1688,21 @@ mod tests {
     }
 
     #[test]
-    fn clear_queue_payload_uses_clear_queue_type_with_id_only() {
-        // No text field — clear_queue takes no input from the user. The
-        // sidecar reads `type` to dispatch and `id` to route the response
-        // envelope back through `pending_requests`.
-        let p = build_clear_queue_payload("cq-abc");
+    fn clear_queue_payload_uses_clear_queue_type_with_id_and_session_id() {
+        // No text field — clear_queue takes no text input from the user. The
+        // sidecar reads `type` to dispatch, `id` to route the response
+        // envelope back through `pending_requests`, and `sessionId` to know
+        // which session's queue to drain.
+        let p = build_clear_queue_payload("cq-abc", "session-1");
         assert_eq!(p["type"], "clear_queue");
         assert_eq!(p["id"], "cq-abc");
+        assert_eq!(p["sessionId"], "session-1");
         // Defensive: ensure no extra fields snuck in that the sidecar
         // doesn't expect (sidecar's strict TS Command union would refuse).
         let obj = p.as_object().expect("clear_queue payload is an object");
         assert_eq!(
             obj.len(),
-            2,
+            3,
             "unexpected fields in clear_queue payload: {p}"
         );
     }
@@ -1606,8 +1710,8 @@ mod tests {
     #[test]
     fn payloads_are_pure_no_shared_state_between_calls() {
         // Two calls with the same id must produce byte-identical JSON.
-        let a = build_steer_payload("same", "hello");
-        let b = build_steer_payload("same", "hello");
+        let a = build_steer_payload("same", "hello", "session-1");
+        let b = build_steer_payload("same", "hello", "session-1");
         assert_eq!(
             serde_json::to_string(&a).unwrap(),
             serde_json::to_string(&b).unwrap()

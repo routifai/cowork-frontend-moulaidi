@@ -1,6 +1,13 @@
 import type { ToolCallInfo } from "@/types";
 import { describe, expect, it } from "vitest";
-import { INITIAL_STATE, type StreamAction, type StreamState, streamReducer } from "./usePiStream";
+import {
+	INITIAL_STATE,
+	type MultiStreamState,
+	type StreamAction,
+	type StreamState,
+	multiStreamReducer,
+	streamReducer,
+} from "./usePiStream";
 
 function run(actions: StreamAction[], start: StreamState = INITIAL_STATE): StreamState {
 	return actions.reduce(streamReducer, start);
@@ -473,5 +480,68 @@ describe("streamReducer — delivered steer/follow-up become bubbles", () => {
 		]);
 		const delivered = state.messages.find((m) => m.content === "also do B");
 		expect(delivered?.kind).toBe("queued-follow-up");
+	});
+});
+
+describe("multiStreamReducer — per-session routing (docs/plans/multi-session-concurrency.md)", () => {
+	it("routes an action into the named session's slot, creating it from INITIAL_STATE if absent", () => {
+		const state = multiStreamReducer(
+			{},
+			{ type: "START_STREAM", prompt: "hello", sessionId: "session-a" },
+		);
+		expect(state["session-a"].messages[0].content).toBe("hello");
+		expect(state["session-a"].isRunning).toBe(true);
+	});
+
+	it("regression: an action for one session never touches another session's slot — the actual bug this hook was rewritten to fix", () => {
+		const before: MultiStreamState = {
+			"session-a": { ...INITIAL_STATE, isRunning: true, error: null },
+		};
+		const after = multiStreamReducer(before, {
+			type: "START_STREAM",
+			prompt: "hi from B",
+			sessionId: "session-b",
+		});
+		// Session A's slot is the exact same object reference — untouched.
+		expect(after["session-a"]).toBe(before["session-a"]);
+		expect(after["session-b"].messages[0].content).toBe("hi from B");
+	});
+
+	it("two sessions accumulate independently across multiple actions", () => {
+		let state: MultiStreamState = {};
+		state = multiStreamReducer(state, {
+			type: "START_STREAM",
+			prompt: "task A",
+			sessionId: "a",
+		});
+		state = multiStreamReducer(state, {
+			type: "START_STREAM",
+			prompt: "task B",
+			sessionId: "b",
+		});
+		state = multiStreamReducer(state, { type: "TEXT_DELTA", delta: "working on A", sessionId: "a" });
+		state = multiStreamReducer(state, {
+			type: "TEXT_DELTA",
+			delta: "working on B",
+			sessionId: "b",
+		});
+		expect(state.a.streamingMessage?.content).toBe("working on A");
+		expect(state.b.streamingMessage?.content).toBe("working on B");
+	});
+
+	it("FORGET_SESSION removes only the named session's key, leaving every other session untouched", () => {
+		const before: MultiStreamState = {
+			a: { ...INITIAL_STATE, isRunning: true },
+			b: { ...INITIAL_STATE, isRunning: false },
+		};
+		const after = multiStreamReducer(before, { type: "FORGET_SESSION", sessionId: "a" });
+		expect(after.a).toBeUndefined();
+		expect(after.b).toBe(before.b);
+	});
+
+	it("FORGET_SESSION on an id that was never tracked is a safe no-op, returning the same state reference", () => {
+		const before: MultiStreamState = { a: INITIAL_STATE };
+		const after = multiStreamReducer(before, { type: "FORGET_SESSION", sessionId: "never-existed" });
+		expect(after).toBe(before);
 	});
 });

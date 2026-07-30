@@ -17,6 +17,7 @@ function mockCtx(): CommandContext {
 
 		openSettings: vi.fn(),
 		showHelp: vi.fn(),
+		sendMessage: vi.fn(),
 	};
 }
 
@@ -24,7 +25,14 @@ describe("BUILTIN_COMMANDS registry", () => {
 	it("exposes the clean-subset commands", () => {
 		const ids = BUILTIN_COMMANDS.map((c) => c.id).sort();
 		expect(ids).toEqual(
-			["session.new", "session.resume", "model.switch", "view.settings", "help.list"].sort(),
+			[
+				"session.new",
+				"session.resume",
+				"model.switch",
+				"view.settings",
+				"help.list",
+				"session.plan",
+			].sort(),
 		);
 	});
 
@@ -96,5 +104,11 @@ describe("runBuiltinCommand dispatch", () => {
 		const ctx = mockCtx();
 		runBuiltinCommand(ctx, cmd("help"), "");
 		expect(ctx.showHelp).toHaveBeenCalledTimes(1);
+	});
+
+	it("/plan sends the literal text '/plan' as a chat message, letting the backend's registered command handle it", () => {
+		const ctx = mockCtx();
+		runBuiltinCommand(ctx, cmd("plan"), "");
+		expect(ctx.sendMessage).toHaveBeenCalledWith("/plan");
 	});
 });

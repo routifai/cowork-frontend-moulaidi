@@ -23,6 +23,11 @@ export interface CommandContext {
 	openSettings: () => void;
 	/** Show the list of available commands. */
 	showHelp: () => void;
+	/** Send raw text as a new chat message — used by commands (e.g. /plan)
+	 * that a backend extension's `pi.registerCommand` needs to see, since
+	 * `session.prompt()` special-cases text starting with `/` as a
+	 * registered command instead of a normal turn. */
+	sendMessage: (text: string) => void;
 }
 
 /** A built-in command: a palette {@link Command} plus its dispatch action. */
@@ -76,6 +81,13 @@ export const BUILTIN_COMMANDS: BuiltinCommand[] = [
 		description: "List available commands",
 		category: "view",
 		run: (ctx) => ctx.showHelp(),
+	},
+	{
+		id: "session.plan",
+		name: "plan",
+		description: "Toggle plan mode: propose a plan before making changes",
+		category: "session",
+		run: (ctx) => ctx.sendMessage("/plan"),
 	},
 ];
 

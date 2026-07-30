@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { RenameDialog } from "@/components/ui/rename-dialog";
 import { useUpdate } from "@/contexts/UpdateProvider";
 import { useExtensionUi } from "@/hooks/useExtensionUi";
-import { usePiStream } from "@/hooks/usePiStream";
+import { INITIAL_STATE, usePiStream } from "@/hooks/usePiStream";
 import { usePlaygroundArtifacts } from "@/hooks/usePlaygroundArtifacts";
 import { useProviders } from "@/hooks/useProviders";
 import { useTelemetry } from "@/hooks/useTelemetry";
@@ -52,15 +52,8 @@ interface SessionEntry {
 function App() {
 	const appUpdate = useUpdate();
 	const playground = usePlaygroundArtifacts();
-	const {
-		state: streamState,
-		startStream,
-		abortStream,
-		steerStream,
-		followUpStream,
-		clearQueue,
-		dispatch,
-	} = usePiStream({ onShowArtifact: playground.upsert });
+	const { streams, startStream, abortStream, steerStream, followUpStream, clearQueue, forgetSession } =
+		usePiStream({ onShowArtifact: playground.upsert });
 
 	// Custom instructions are no longer prepended to messages here. They live in
 	// INSTRUCTIONS.md and the sidecar injects them into the system prompt as
@@ -106,6 +99,12 @@ function App() {
 	// Session management
 	const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
 	const [activeSessionFile, setActiveSessionFile] = useState<string | null>(null);
+	// The DISPLAYED session's stream state, derived from the multi-session
+	// `streams` map — switching which session is displayed never resets or
+	// otherwise touches any session's entry in that map (see
+	// docs/plans/multi-session-concurrency.md), so a backgrounded session's
+	// live progress survives being navigated away from and back to.
+	const streamState = (activeSessionFile && streams[activeSessionFile]) || INITIAL_STATE;
 	// Draft prompt pushed into the composer (e.g. when a template is clicked).
 	// The bumping `nonce` lets the same prompt be re-applied on repeated clicks.
 	const [composerDraft, setComposerDraft] = useState<{ text: string; nonce: number }>();
@@ -258,7 +257,16 @@ function App() {
 	}
 
 	// ── When stream completes, merge into loaded messages and save to disk ──
-	// biome-ignore lint/correctness/useExhaustiveDependencies: Only trigger when stream finishes, not on every dep change
+	// `activeSessionFile` is a dependency (not just streamState.isRunning) so
+	// this ALSO fires when switching TO a session that finished streaming
+	// while it was backgrounded — otherwise its already-completed turn would
+	// stay stuck in `streams[sid]` and never fold into `loadedSessionMessages`,
+	// which `handleSessionSelect`'s fresh `load_session` fetch is about to
+	// (re)populate from disk anyway. A harmless, brief intermediate state is
+	// possible here (this effect can run before that fetch resolves, briefly
+	// showing only the just-finished turn) — the fetch's result supersedes it
+	// moments later. See docs/plans/multi-session-concurrency.md Phase 3.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: Only trigger on stream completion or session switch, not on every dep change
 	useEffect(() => {
 		if (!streamState.isRunning && streamState.messages.length > 0) {
 			const sid = activeSessionFile;
@@ -277,11 +285,12 @@ function App() {
 			// Update loaded messages so the display shows full history
 			setLoadedSessionMessages(merged);
 
-			// Clear stream messages to prevent duplication on next render. Safe to
-			// use plain RESET here — playground artifacts live in their own store
-			// (usePlaygroundArtifacts) now, entirely outside this reducer, so this
-			// can no longer touch them even by accident.
-			dispatch({ type: "RESET" });
+			// Forget this session's transient stream state now that it's been
+			// folded into loadedSessionMessages — prevents double-rendering it
+			// on the next prompt (START_STREAM resets streams[sid] to a blank
+			// slate) or on a future switch back to this session. Only this
+			// SPECIFIC session's entry is touched — never another session's.
+			forgetSession(sid);
 
 			// pi auto-persists during the agent loop — no manual save. Just
 			// reconcile the sidebar with disk truth (title/preview/count).
@@ -315,7 +324,7 @@ function App() {
 				];
 			});
 		}
-	}, [streamState.isRunning]);
+	}, [streamState.isRunning, activeSessionFile]);
 
 	// ── Send a new prompt ──
 	const handleSend = useCallback(
@@ -362,7 +371,7 @@ function App() {
 			// Keep loadedSessionMessages — startStream only produces the new turn.
 			// Merging happens in the stream-complete effect above.
 			setPlaygroundClosed(false);
-			startStream(text);
+			startStream(sessionFile, text);
 		},
 		[activeSessionFile, startStream, models, activeModelId, workspaceCwd],
 	);
@@ -381,7 +390,8 @@ function App() {
 	 * the queue entirely they just clear the textarea — nothing fires.
 	 */
 	const handleEditQueue = useCallback(async () => {
-		const drained = await clearQueue();
+		if (!activeSessionFile) return;
+		const drained = await clearQueue(activeSessionFile);
 		const all = [...drained.steering, ...drained.followUp];
 		if (all.length === 0) return;
 		const joined = all.join("\n\n");
@@ -389,7 +399,7 @@ function App() {
 			text: joined,
 			nonce: (prev?.nonce ?? 0) + 1,
 		}));
-	}, [clearQueue]);
+	}, [clearQueue, activeSessionFile]);
 
 	const handleModelSelect = useCallback(async (provider: string, modelId: string) => {
 		setActiveModelId(modelKey(provider, modelId));
@@ -432,7 +442,11 @@ function App() {
 			} catch {
 				// ignore
 			}
-			dispatch({ type: "RESET" });
+			// Deliberately no reset of any stream state here — a genuinely new
+			// session has no prior entry in `streams` to reset, and this must
+			// never touch whatever a DIFFERENT, still-active session is doing
+			// (that was the literal bug: creating a new chat used to abort
+			// whatever was running). See docs/plans/multi-session-concurrency.md.
 			playground.clear();
 			setSelectedArtifactId(null);
 			setLoadedSessionMessages(null);
@@ -440,7 +454,7 @@ function App() {
 			setActiveSessionFile(file ?? `session-${Date.now()}.jsonl`);
 			return resolvedCwd;
 		},
-		[dispatch, playground.clear],
+		[playground.clear],
 	);
 
 	// "New session" ALWAYS asks for a folder first (native picker), then starts
@@ -483,10 +497,11 @@ function App() {
 				openModelSelector: () => setShowModelSelector(true),
 				openSettings,
 				showHelp: () => setShowHelp(true),
+				sendMessage: (text) => handleSend(text),
 			};
 			runBuiltinCommand(ctx, builtin, args);
 		},
-		[handleNewSessionPrompt],
+		[handleNewSessionPrompt, handleSend],
 	);
 
 	// Load the sidecar's active workspace once it's ready, so the sidebar can
@@ -529,14 +544,17 @@ function App() {
 			// ignore
 		}
 		setSessionEntries((prev) => prev.filter((s) => s.file !== file));
+		// A deleted session's stream state should be forgotten regardless of
+		// whether it happened to be the displayed one — this only ever touches
+		// the deleted session's own entry, never another session's.
+		forgetSession(file);
 		if (activeSessionFile === file) {
 			setActiveSessionFile(null);
 			setLoadedSessionMessages(null);
-			dispatch({ type: "RESET" });
 			playground.clear();
 			setSelectedArtifactId(null);
 		}
-	}, [pendingDelete, activeSessionFile, dispatch, playground.clear]);
+	}, [pendingDelete, activeSessionFile, forgetSession, playground.clear]);
 
 	// Open the rename popup for a session (mirrors the delete confirm flow).
 	const handleRequestRename = useCallback(
@@ -599,7 +617,10 @@ function App() {
 			setLoadingSession(true);
 			setActiveSessionFile(file);
 			setLoadedSessionMessages(null);
-			dispatch({ type: "RESET" });
+			// Deliberately no stream reset here — the session being switched TO
+			// may still be actively streaming in the background, and switching
+			// away from the PREVIOUS session must not touch its state either.
+			// See docs/plans/multi-session-concurrency.md Phase 3.
 			playground.clear();
 			setSelectedArtifactId(null);
 			try {
@@ -651,7 +672,7 @@ function App() {
 				setLoadingSession(false);
 			}
 		},
-		[activeSessionFile, dispatch, models, playground.clear, playground.seed],
+		[activeSessionFile, models, playground.clear, playground.seed],
 	);
 
 	// ── Build display messages ──
@@ -794,10 +815,12 @@ function App() {
 										isRunning={streamState.isRunning}
 										error={streamState.error}
 										onSend={handleSend}
-										onAbort={() => abortStream()}
+										onAbort={() => activeSessionFile && abortStream(activeSessionFile)}
 										/* Issue #201, PR 2 — mid-turn message queuing. */
-										onSteer={steerStream}
-										onFollowUp={followUpStream}
+										onSteer={(text) => activeSessionFile && steerStream(activeSessionFile, text)}
+										onFollowUp={(text) =>
+											activeSessionFile && followUpStream(activeSessionFile, text)
+										}
 										/* Issue #201, PR 3 — queue visibility + editing. */
 										queue={streamState.queue}
 										onEditQueue={handleEditQueue}
