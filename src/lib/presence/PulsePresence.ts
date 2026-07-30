@@ -83,18 +83,10 @@ export class PulsePresence {
 		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 		this.renderer.setSize(window.innerWidth, window.innerHeight);
 
-		this.camera = new THREE.PerspectiveCamera(
-			45,
-			window.innerWidth / window.innerHeight,
-			0.1,
-			100,
-		);
+		this.camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
 		this.camera.position.set(0, 0, 9);
 
-		this.geo.setAttribute(
-			"position",
-			new THREE.BufferAttribute(new Float32Array(BARS * 2 * 3), 3),
-		);
+		this.geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(BARS * 2 * 3), 3));
 		const colors = new Float32Array(BARS * 2 * 3);
 		const cBlue = new THREE.Color("#0051a5");
 		const cMid = new THREE.Color("#1a66ff");
@@ -152,11 +144,7 @@ export class PulsePresence {
 	/** Short digital-corruption burst — state transitions only, never looped. */
 	glitch(strength = 1) {
 		if (this.reducedMotion) return;
-		gsap.fromTo(
-			this.params,
-			{ glitch: strength },
-			{ glitch: 0, duration: 0.32, ease: "steps(4)" },
-		);
+		gsap.fromTo(this.params, { glitch: strength }, { glitch: 0, duration: 0.32, ease: "steps(4)" });
 	}
 
 	/** Brief volatility kick — wire to composer keystrokes while at rest. */

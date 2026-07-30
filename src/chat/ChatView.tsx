@@ -346,9 +346,7 @@ export function ChatView({
 								style={{ maxWidth: "var(--chat-max-width, 820px)" }}
 							>
 								<div ref={thinkingDockRef} className="h-14 w-14 shrink-0" aria-hidden="true" />
-								<span className="animate-shimmer-text text-sm font-light">
-									Mapping the work…
-								</span>
+								<span className="animate-shimmer-text text-sm font-light">Mapping the work…</span>
 							</div>
 						)}
 						<div ref={messagesEndRef} />

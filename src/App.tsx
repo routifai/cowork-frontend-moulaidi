@@ -1,4 +1,5 @@
 import { ChatView } from "@/chat/ChatView";
+import { AuthGate, shouldShowAuthGate } from "@/components/AuthGate";
 import { ExtensionUiDialog } from "@/components/ExtensionUiDialog";
 import { HelpDialog } from "@/components/HelpDialog";
 import { SettingsPage } from "@/components/SettingsPage";
@@ -50,10 +51,19 @@ interface SessionEntry {
 }
 
 function App() {
+	// V3 dummy auth gate (once per session; skipped in tests).
+	const [showAuthGate, setShowAuthGate] = useState(shouldShowAuthGate);
 	const appUpdate = useUpdate();
 	const playground = usePlaygroundArtifacts();
-	const { streams, startStream, abortStream, steerStream, followUpStream, clearQueue, forgetSession } =
-		usePiStream({ onShowArtifact: playground.upsert });
+	const {
+		streams,
+		startStream,
+		abortStream,
+		steerStream,
+		followUpStream,
+		clearQueue,
+		forgetSession,
+	} = usePiStream({ onShowArtifact: playground.upsert });
 
 	// Custom instructions are no longer prepended to messages here. They live in
 	// INSTRUCTIONS.md and the sidecar injects them into the system prompt as
@@ -707,6 +717,10 @@ function App() {
 		// otherwise Large/Extra-Large overflows <body>, and focus-scroll clips the
 		// fixed sidebar top-chrome (the New-chat button) off the top. The per-preset
 		<div className="flex md:gap-2.5 md:p-2.5 [zoom:1] h-screen">
+			{/* V3 dummy auth gate: full-screen overlay, once per session. The app
+			    mounts beneath it so the reveal lands on a ready chat. */}
+			{showAuthGate && <AuthGate onDone={() => setShowAuthGate(false)} />}
+
 			{/* Delete chat confirmation */}
 			<ConfirmDialog
 				open={pendingDelete !== null}
