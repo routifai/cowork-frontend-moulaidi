@@ -1,0 +1,222 @@
+/* =====================================================================
+   Hypatia V3 — Design Tokens & Utilities
+   Source of truth for the V3 design language. Import globally.
+   ===================================================================== */
+
+:root {
+    /* -- Color ------------------------------------------------------- */
+    --hy-ink: #0d0d0f;            /* primary text, dark surfaces */
+    --hy-surface: #ffffff;
+    --hy-stone: #fafafa;          /* app background, subtle fills */
+    --hy-page: #fbfbfc;           /* body background */
+    --hy-border: #e7e7e9;         /* hairline borders */
+    --hy-accent: #0051a5;         /* RBC blue — the ONLY saturated color */
+    --hy-accent-bright: #1a66ff;  /* electric blue, WebGL/glow only */
+    --hy-gold: #e8a821;           /* RBC gold, muted — details only */
+    --hy-success: #10a37f;
+    --hy-danger: #f87171;
+    --hy-text-secondary: #6b7280;
+    --hy-text-muted: #a3a3a8;
+
+    /* -- Type -------------------------------------------------------- */
+    --hy-font-sans: 'Inter', system-ui, sans-serif;
+    --hy-font-serif: 'Playfair Display', Georgia, serif;
+    --hy-font-mono: 'JetBrains Mono', monospace;
+
+    /* Editorial display headings: serif, tight tracking */
+    --hy-display-tracking: -0.02em;
+    /* Micro-labels: mono, uppercase, wide tracking */
+    --hy-label-tracking: 0.25em;
+
+    /* -- Shape ------------------------------------------------------- */
+    --hy-radius-panel: 22px;      /* cards, composer, bubbles */
+    --hy-radius-control: 12px;    /* buttons, inputs */
+    --hy-radius-chip: 10px;
+
+    /* -- Elevation --------------------------------------------------- */
+    --hy-shadow-subtle: 0 4px 20px rgba(13, 13, 15, 0.04);
+    --hy-shadow-panel: 0 12px 40px rgba(13, 13, 15, 0.05);
+    --hy-shadow-hover: 0 20px 50px rgba(13, 13, 15, 0.08);
+
+    /* -- Motion ------------------------------------------------------ */
+    --hy-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --hy-dur-fast: 0.25s;
+    --hy-dur-med: 0.6s;
+    --hy-dur-slow: 1.2s;
+}
+
+/* =====================================================================
+   Base
+   ===================================================================== */
+
+.hy-body {
+    font-family: var(--hy-font-sans);
+    background-color: var(--hy-page);
+    color: var(--hy-ink);
+}
+
+.hy-display {
+    font-family: var(--hy-font-serif);
+    letter-spacing: var(--hy-display-tracking);
+}
+
+.hy-label {
+    font-family: var(--hy-font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: var(--hy-label-tracking);
+    color: var(--hy-text-muted);
+}
+
+/* =====================================================================
+   Surfaces
+   ===================================================================== */
+
+/* Frosted glass panel — composer, user bubbles, floating cards */
+.hy-glass {
+    background: rgba(255, 255, 255, 0.62);
+    backdrop-filter: blur(28px) saturate(1.4);
+    -webkit-backdrop-filter: blur(28px) saturate(1.4);
+    border: 1px solid rgba(231, 231, 233, 0.9);
+    box-shadow: var(--hy-shadow-panel);
+    border-radius: var(--hy-radius-panel);
+}
+
+/* Film grain overlay — one per page, fixed, on top of everything */
+.hy-grain {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.hy-hairline-top { border-top: 1px solid rgba(13, 13, 15, 0.06); }
+
+/* Dark terminal card body */
+.hy-terminal {
+    background: var(--hy-ink);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.hy-terminal-body {
+    font-family: var(--hy-font-mono);
+    font-size: 11.5px;
+    line-height: 1.7;
+    color: #9ca3af;
+}
+.hy-terminal-body .t-ok   { color: #34d399; }
+.hy-terminal-body .t-add  { color: #93c5fd; }
+.hy-terminal-body .t-warn { color: var(--hy-gold); }
+
+/* =====================================================================
+   Motion utilities
+   ===================================================================== */
+
+/* Glitch slice — apply .glitching for ~260 ms via JS, never loop.
+   Element needs: class="hy-glitch-text" data-text="<same text>" */
+.hy-glitch-text { position: relative; }
+.hy-glitch-text::before,
+.hy-glitch-text::after {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
+}
+.hy-glitch-text.glitching::before {
+    opacity: 0.85;
+    color: var(--hy-accent);
+    animation: hy-glitch-a 0.24s steps(2) both;
+}
+.hy-glitch-text.glitching::after {
+    opacity: 0.85;
+    color: var(--hy-gold);
+    animation: hy-glitch-b 0.24s steps(2) both;
+}
+@keyframes hy-glitch-a {
+    0%   { clip-path: inset(8% 0 62% 0);  transform: translate(-4px, 1px); }
+    50%  { clip-path: inset(42% 0 28% 0); transform: translate(3px, -1px); }
+    100% { clip-path: inset(70% 0 4% 0);  transform: translate(-2px, 0); }
+}
+@keyframes hy-glitch-b {
+    0%   { clip-path: inset(58% 0 16% 0); transform: translate(4px, -1px); }
+    50%  { clip-path: inset(12% 0 66% 0); transform: translate(-3px, 1px); }
+    100% { clip-path: inset(36% 0 42% 0); transform: translate(2px, 0); }
+}
+
+/* Streaming cursor (assistant text while tokens arrive) */
+.hy-cursor {
+    display: inline-block;
+    width: 0.55ch;
+    height: 1em;
+    background: var(--hy-accent);
+    vertical-align: text-bottom;
+    margin-left: 1px;
+    animation: hy-blink 0.9s steps(1) infinite;
+}
+@keyframes hy-blink { 50% { opacity: 0; } }
+
+/* Shimmer text (thinking status line) */
+.hy-shimmer-text {
+    background: linear-gradient(90deg, #a3a3a8 30%, #0d0d0f 50%, #a3a3a8 70%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: hy-shimmer 1.8s linear infinite;
+}
+
+/* Skeleton line (incoming answer placeholder) */
+.hy-skeleton {
+    height: 11px;
+    border-radius: 6px;
+    background: linear-gradient(90deg,
+        rgba(13, 13, 15, 0.05) 25%,
+        rgba(0, 81, 165, 0.10) 50%,
+        rgba(13, 13, 15, 0.05) 75%);
+    background-size: 200% 100%;
+    animation: hy-shimmer 1.6s linear infinite;
+}
+@keyframes hy-shimmer {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+}
+
+/* Market ticker — duplicate the item list once inside the track */
+.hy-ticker-track { animation: hy-ticker 42s linear infinite; }
+@keyframes hy-ticker {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+}
+
+/* Active session rail (sidebar) — gold→blue gradient marker */
+.hy-session-active { position: relative; }
+.hy-session-active::before {
+    content: '';
+    position: absolute;
+    left: -1px; top: 10px; bottom: 10px;
+    width: 2px;
+    border-radius: 2px;
+    background: linear-gradient(to bottom, var(--hy-gold), var(--hy-accent));
+}
+
+/* Presence anchor slots — empty divs the WebGL presence flies between */
+.orb-slot { /* size via width/height utilities; keep empty */ }
+
+/* =====================================================================
+   Reduced motion — mandatory
+   ===================================================================== */
+@media (prefers-reduced-motion: reduce) {
+    .hy-glitch-text.glitching::before,
+    .hy-glitch-text.glitching::after,
+    .hy-cursor,
+    .hy-shimmer-text,
+    .hy-skeleton,
+    .hy-ticker-track {
+        animation: none !important;
+    }
+}

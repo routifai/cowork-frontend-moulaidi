@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypatia — Presence Forms</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ink: '#0d0d0f',
+                        stone: '#fafafa',
+                        border: '#e7e7e9',
+                        accent: '#0051a5',
+                        gold: '#e8a821',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        serif: ['Playfair Display', 'Georgia', 'serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #fbfbfc; color: #0d0d0f; }
+        .editorial-text { font-family: 'Playfair Display', serif; letter-spacing: -0.02em; }
+        .grain {
+            position: fixed; inset: 0; z-index: 60; pointer-events: none;
+            opacity: 0.035; mix-blend-mode: multiply;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+        .concept-card { transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.35s; }
+        .concept-card:hover { transform: translateY(-4px); box-shadow: 0 20px 50px rgba(13,13,15,0.08); }
+        .stage-glow {
+            position: absolute; left: 50%; top: 50%;
+            width: 65%; height: 65%;
+            transform: translate(-50%, -50%);
+            border-radius: 9999px;
+            background: radial-gradient(circle at 45% 40%,
+                rgba(46, 105, 255, 0.13) 0%,
+                rgba(64, 140, 255, 0.06) 40%,
+                rgba(255,255,255,0) 70%);
+            filter: blur(4px);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="grain"></div>
+
+    <div class="max-w-6xl mx-auto px-8 py-14">
+        <div class="flex items-end justify-between mb-10">
+            <div>
+                <div class="flex items-center space-x-3 mb-4">
+                    <div class="w-1.5 h-1.5 rounded-full bg-gold animate-pulse"></div>
+                    <span class="text-[11px] font-mono uppercase tracking-[0.3em] text-gray-400">Presence forms · 8 directions beyond the blob</span>
+                </div>
+                <h1 class="text-5xl editorial-text text-ink">Does it have to<br><span class="italic text-gray-400">be a sphere?</span></h1>
+            </div>
+            <p class="text-sm text-gray-500 font-light max-w-xs leading-relaxed text-right">
+                Eight different bodies for the same soul. Toggle <span class="font-mono text-[11px] uppercase">Thinking</span> to judge each under load — that state is where identity lives.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-6" id="grid"></div>
+
+        <div class="text-center text-[10px] font-mono text-gray-300 uppercase tracking-[0.25em] mt-12">Rendered live · WebGL · RBC palette · blob remains option zero</div>
+    </div>
+
+<script>
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const BLUE = new THREE.Color('#0051a5');
+const MID  = new THREE.Color('#1a66ff');
+const ICE  = new THREE.Color('#dceeff');
+const GOLD = new THREE.Color('#e8a821');
+const INK  = new THREE.Color('#0d0d0f');
+
+// r128-safe random unit vector (Vector3.randomDirection doesn't exist there)
+function randDir() {
+    const u = Math.random() * 2 - 1;
+    const phi = Math.random() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    return new THREE.Vector3(s * Math.cos(phi), s * Math.sin(phi), u);
+}
+
+const SNOISE = `
+vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+      i.z + vec4(0.0, i1.z, i2.z, 1.0))
+    + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+    + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0)*2.0 + 1.0;
+  vec4 s1 = floor(b1)*2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+`;
+
+// =====================================================================
+// FORMS — each: { group, setState('rest'|'thinking'), update(t) }
+// =====================================================================
+
+// 1 ── APERTURE ─ three rings of light in precession
+function formAperture() {
+    const group = new THREE.Group();
+    const params = { speed: 0.25, split: 0 };
+    const rings = [];
+    const colors = [BLUE, MID, ICE];
+    for (let i = 0; i < 3; i++) {
+        const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(1.05 + i * 0.02, 0.018 - i * 0.004, 16, 128),
+            new THREE.MeshBasicMaterial({ color: colors[i], transparent: true, opacity: 0.9 - i * 0.25 })
+        );
+        group.add(ring);
+        rings.push(ring);
+    }
+    return {
+        group,
+        setState(s) {
+            gsap.to(params, { speed: s === 'thinking' ? 1.6 : 0.25, split: s === 'thinking' ? 1 : 0, duration: 1.2, ease: 'power2.inOut' });
+        },
+        update(t) {
+            rings.forEach((r, i) => {
+                const dir = i === 1 ? -1 : 1;
+                r.rotation.x = Math.sin(t * params.speed * dir + i * 2.1) * (0.5 + params.split * 0.6);
+                r.rotation.y = t * params.speed * dir * (1 + i * 0.3);
+                r.scale.setScalar(1 + params.split * i * 0.07);
+            });
+        }
+    };
+}
+
+// 2 ── SWARM ─ particles holding a sphere by consensus
+function formSwarm() {
+    const group = new THREE.Group();
+    const N = 2600;
+    const pos = new Float32Array(N * 3);
+    const phase = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+        const v = randDir();
+        pos[i*3] = v.x; pos[i*3+1] = v.y; pos[i*3+2] = v.z;
+        phase[i] = Math.random() * Math.PI * 2;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aPhase', new THREE.BufferAttribute(phase, 1));
+
+    const uniforms = {
+        uTime: { value: 0 },
+        uScatter: { value: 0.10 },
+        uSpeed: { value: 0.4 },
+    };
+    group.add(new THREE.Points(geo, new THREE.ShaderMaterial({
+        uniforms, transparent: true, depthWrite: false,
+        vertexShader: SNOISE + `
+            attribute float aPhase;
+            uniform float uTime, uScatter, uSpeed;
+            varying float vShade;
+            void main() {
+                vec3 dir = normalize(position);
+                float t = uTime * uSpeed;
+                float n = snoise(dir * 2.2 + vec3(t * 0.6));
+                float r = 1.0 + n * uScatter + sin(aPhase + t * 2.0) * uScatter * 0.5;
+                vec3 p = dir * r;
+                vec4 mv = modelViewMatrix * vec4(p, 1.0);
+                gl_PointSize = (2.6 + n * 1.4) * (4.2 / -mv.z);
+                gl_Position = projectionMatrix * mv;
+                vShade = 0.5 + 0.5 * n;
+            }
+        `,
+        fragmentShader: `
+            varying float vShade;
+            void main() {
+                float d = length(gl_PointCoord - vec2(0.5));
+                if (d > 0.5) discard;
+                vec3 c = mix(vec3(0.0, 0.32, 0.65), vec3(0.86, 0.94, 1.0), vShade);
+                gl_FragColor = vec4(c, smoothstep(0.5, 0.12, d) * 0.9);
+            }
+        `,
+    })));
+    return {
+        group,
+        setState(s) {
+            gsap.to(uniforms.uScatter, { value: s === 'thinking' ? 0.45 : 0.10, duration: 1.4, ease: 'power2.inOut' });
+            gsap.to(uniforms.uSpeed,   { value: s === 'thinking' ? 1.6 : 0.4, duration: 1.4, ease: 'power2.inOut' });
+        },
+        update(t) {
+            uniforms.uTime.value = t;
+            group.rotation.y = t * 0.15;
+        }
+    };
+}
+
+// 3 ── SILK ─ flowing ribbon tied in a knot
+function formSilk() {
+    const group = new THREE.Group();
+    const uniforms = {
+        uTime: { value: 0 },
+        uFlow: { value: 0.25 },
+        uWobble: { value: 0.0 },
+    };
+    const mesh = new THREE.Mesh(
+        new THREE.TorusKnotGeometry(0.62, 0.19, 260, 32, 2, 3),
+        new THREE.ShaderMaterial({
+            uniforms,
+            side: THREE.DoubleSide,
+            vertexShader: SNOISE + `
+                uniform float uTime, uWobble;
+                varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+                void main() {
+                    vUv = uv;
+                    vec3 p = position;
+                    p += normal * snoise(position * 2.0 + vec3(uTime * 0.8)) * uWobble;
+                    vN = normalize(normalMatrix * normal);
+                    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+                    vV = normalize(-mv.xyz);
+                    gl_Position = projectionMatrix * mv;
+                }
+            `,
+            fragmentShader: `
+                uniform float uTime, uFlow;
+                varying vec2 vUv; varying vec3 vN; varying vec3 vV;
+                void main() {
+                    float ndv = clamp(dot(normalize(vN), normalize(vV)), 0.0, 1.0);
+                    float band = 0.5 + 0.5 * sin(vUv.x * 80.0 - uTime * uFlow * 22.0);
+                    band = smoothstep(0.25, 0.75, band);
+                    vec3 deep = vec3(0.0, 0.20, 0.55);
+                    vec3 ice  = vec3(0.88, 0.95, 1.0);
+                    vec3 c = mix(deep, ice, band);
+                    c = mix(c, vec3(0.02, 0.05, 0.15), pow(1.0 - ndv, 1.8) * 0.6);
+                    c += vec3(1.0) * pow(ndv, 24.0) * 0.35;
+                    gl_FragColor = vec4(c, 1.0);
+                }
+            `,
+        })
+    );
+    group.add(mesh);
+    return {
+        group,
+        setState(s) {
+            gsap.to(uniforms.uFlow,   { value: s === 'thinking' ? 1.2 : 0.25, duration: 1.4, ease: 'power2.inOut' });
+            gsap.to(uniforms.uWobble, { value: s === 'thinking' ? 0.05 : 0.0, duration: 1.4, ease: 'power2.inOut' });
+        },
+        update(t) {
+            uniforms.uTime.value = t;
+            mesh.rotation.y = t * 0.2;
+            mesh.rotation.z = Math.sin(t * 0.15) * 0.3;
+        }
+    };
+}
+
+// 4 ── BLUEPRINT ─ wireframe icosahedron, gold vertices, burning core
+function formBlueprint() {
+    const group = new THREE.Group();
+    const params = { shell: 1, coreGlow: 0.5, speed: 0.3 };
+
+    const icoGeo = new THREE.IcosahedronGeometry(0.95, 1);
+    const wire = new THREE.LineSegments(
+        new THREE.WireframeGeometry(icoGeo),
+        new THREE.LineBasicMaterial({ color: INK, transparent: true, opacity: 0.35 })
+    );
+    group.add(wire);
+
+    const verts = new THREE.Points(icoGeo, new THREE.PointsMaterial({
+        color: GOLD, size: 0.05, transparent: true, opacity: 0.95
+    }));
+    group.add(verts);
+
+    const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.38, 32, 32),
+        new THREE.MeshBasicMaterial({ color: BLUE, transparent: true, opacity: 0.5 })
+    );
+    group.add(core);
+
+    const halo = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5, 32, 32),
+        new THREE.MeshBasicMaterial({ color: MID, transparent: true, opacity: 0.12 })
+    );
+    group.add(halo);
+
+    return {
+        group,
+        setState(s) {
+            gsap.to(params, {
+                shell: s === 'thinking' ? 1.18 : 1,
+                coreGlow: s === 'thinking' ? 1 : 0.5,
+                speed: s === 'thinking' ? 1.4 : 0.3,
+                duration: 1.2, ease: 'power2.inOut'
+            });
+        },
+        update(t) {
+            const step = params.speed > 0.8 ? Math.floor(t * 10) / 10 : t;
+            wire.rotation.y = step * params.speed;
+            wire.rotation.x = Math.sin(t * 0.3) * 0.25;
+            verts.rotation.copy(wire.rotation);
+            wire.scale.setScalar(params.shell);
+            verts.scale.setScalar(params.shell);
+            core.material.opacity = params.coreGlow * (0.75 + Math.sin(t * 3) * 0.25);
+            halo.scale.setScalar(1 + Math.sin(t * 2) * 0.08 * params.coreGlow * 2);
+        }
+    };
+}
+
+// 5 ── CONSTELLATION ─ neural graph on a shell
+function formConstellation() {
+    const group = new THREE.Group();
+    const params = { fire: 0.15, speed: 0.12 };
+
+    const N = 110;
+    const nodes = [];
+    for (let i = 0; i < N; i++) nodes.push(randDir().multiplyScalar(0.85 + Math.random() * 0.25));
+
+    const nodePts = new THREE.Points(
+        new THREE.BufferGeometry().setFromPoints(nodes),
+        new THREE.PointsMaterial({ color: BLUE, size: 0.05, transparent: true, opacity: 0.9 })
+    );
+    group.add(nodePts);
+
+    const linkPairs = [];
+    for (let i = 0; i < N; i++)
+        for (let j = i + 1; j < N; j++)
+            if (nodes[i].distanceTo(nodes[j]) < 0.5) linkPairs.push([i, j]);
+
+    const linkPos = new Float32Array(linkPairs.length * 6);
+    linkPairs.forEach(([a, b], k) => {
+        linkPos.set([nodes[a].x, nodes[a].y, nodes[a].z, nodes[b].x, nodes[b].y, nodes[b].z], k * 6);
+    });
+    const linkGeo = new THREE.BufferGeometry();
+    linkGeo.setAttribute('position', new THREE.BufferAttribute(linkPos, 3));
+    const linkMat = new THREE.LineBasicMaterial({ color: MID, transparent: true, opacity: 0.18 });
+    group.add(new THREE.LineSegments(linkGeo, linkMat));
+
+    const hotIdx = Array.from({ length: 7 }, () => Math.floor(Math.random() * N));
+    const hotPts = new THREE.Points(
+        new THREE.BufferGeometry().setFromPoints(hotIdx.map(i => nodes[i])),
+        new THREE.PointsMaterial({ color: GOLD, size: 0.08, transparent: true, opacity: 0.9 })
+    );
+    group.add(hotPts);
+
+    return {
+        group,
+        setState(s) {
+            gsap.to(params, {
+                fire: s === 'thinking' ? 0.85 : 0.15,
+                speed: s === 'thinking' ? 0.5 : 0.12,
+                duration: 1.3, ease: 'power2.inOut'
+            });
+        },
+        update(t) {
+            group.rotation.y = t * params.speed;
+            group.rotation.x = Math.sin(t * 0.2) * 0.2;
+            linkMat.opacity = 0.10 + params.fire * (0.25 + 0.25 * Math.sin(t * 6.0));
+            hotPts.material.size = 0.07 + params.fire * 0.05 * (1 + Math.sin(t * 8.0));
+            nodePts.material.opacity = 0.7 + params.fire * 0.3 * Math.abs(Math.sin(t * 4.0));
+        }
+    };
+}
+
+// 6 ── PULSE ─ radial waveform: voice-assistant DNA, finance-monitor feel
+function formPulse() {
+    const group = new THREE.Group();
+    const params = { chaos: 0.12, speed: 1.0 };
+
+    const BARS = 96;
+    const R0 = 0.85;
+    const positions = new Float32Array(BARS * 2 * 3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const colors = new Float32Array(BARS * 2 * 3);
+    for (let i = 0; i < BARS; i++) {
+        const isGold = i % 16 === 0;
+        const c = isGold ? GOLD : (i % 2 === 0 ? BLUE : MID);
+        for (let k = 0; k < 2; k++) {
+            colors[(i * 2 + k) * 3]     = c.r;
+            colors[(i * 2 + k) * 3 + 1] = c.g;
+            colors[(i * 2 + k) * 3 + 2] = c.b;
+        }
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.85
+    }));
+    group.add(lines);
+
+    const innerRing = new THREE.Mesh(
+        new THREE.TorusGeometry(R0 - 0.03, 0.008, 8, 128),
+        new THREE.MeshBasicMaterial({ color: INK, transparent: true, opacity: 0.25 })
+    );
+    group.add(innerRing);
+
+    return {
+        group,
+        setState(s) {
+            gsap.to(params, {
+                chaos: s === 'thinking' ? 0.5 : 0.12,
+                speed: s === 'thinking' ? 3.2 : 1.0,
+                duration: 1.2, ease: 'power2.inOut'
+            });
+        },
+        update(t) {
+            const p = lines.geometry.attributes.position.array;
+            for (let i = 0; i < BARS; i++) {
+                const a = (i / BARS) * Math.PI * 2;
+                const wave = Math.sin(a * 3 + t * params.speed) * 0.5 + 0.5;
+                const jitter = Math.sin(a * 17.0 + t * params.speed * 7.3) * params.chaos;
+                const h = 0.06 + wave * 0.16 + Math.abs(jitter) * 0.6;
+                const cx = Math.cos(a), cy = Math.sin(a);
+                p[(i * 2) * 3]     = cx * R0;
+                p[(i * 2) * 3 + 1] = cy * R0;
+                p[(i * 2) * 3 + 2] = 0;
+                p[(i * 2 + 1) * 3]     = cx * (R0 + h);
+                p[(i * 2 + 1) * 3 + 1] = cy * (R0 + h);
+                p[(i * 2 + 1) * 3 + 2] = 0;
+            }
+            lines.geometry.attributes.position.needsUpdate = true;
+            group.rotation.z = t * 0.06;
+        }
+    };
+}
+
+// 7 ── SHARD ─ faceted crystal that fractures apart under load
+function formShard() {
+    const group = new THREE.Group();
+    const params = { explode: 0, speed: 0.25, glow: 0.4 };
+
+    const geo = new THREE.IcosahedronGeometry(0.85, 0).toNonIndexed();
+    geo.computeVertexNormals();
+
+    // Per-face centroid direction for the fracture offset
+    const posAttr = geo.attributes.position;
+    const faceDir = new Float32Array(posAttr.count * 3);
+    for (let f = 0; f < posAttr.count / 3; f++) {
+        const cx = (posAttr.getX(f*3) + posAttr.getX(f*3+1) + posAttr.getX(f*3+2)) / 3;
+        const cy = (posAttr.getY(f*3) + posAttr.getY(f*3+1) + posAttr.getY(f*3+2)) / 3;
+        const cz = (posAttr.getZ(f*3) + posAttr.getZ(f*3+1) + posAttr.getZ(f*3+2)) / 3;
+        const len = Math.sqrt(cx*cx + cy*cy + cz*cz) || 1;
+        for (let k = 0; k < 3; k++) {
+            faceDir[(f*3+k)*3]     = cx / len;
+            faceDir[(f*3+k)*3 + 1] = cy / len;
+            faceDir[(f*3+k)*3 + 2] = cz / len;
+        }
+    }
+    geo.setAttribute('aDir', new THREE.BufferAttribute(faceDir, 3));
+
+    const uniforms = {
+        uTime: { value: 0 },
+        uExplode: { value: 0 },
+        uGlow: { value: 0.4 },
+    };
+    const mesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader: `
+            attribute vec3 aDir;
+            uniform float uExplode;
+            uniform float uTime;
+            varying vec3 vN; varying vec3 vV;
+            void main() {
+                vec3 p = position + aDir * uExplode * (0.5 + 0.5 * sin(dot(aDir, vec3(12.9898, 78.233, 45.164)) * 43758.5453 + uTime));
+                vN = normalize(normalMatrix * normal);
+                vec4 mv = modelViewMatrix * vec4(p, 1.0);
+                vV = normalize(-mv.xyz);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            uniform float uGlow;
+            varying vec3 vN; varying vec3 vV;
+            void main() {
+                vec3 N = normalize(vN), V = normalize(vV);
+                float ndv = clamp(dot(N, V), 0.0, 1.0);
+                // Flat facets: each face one tone of blue glass
+                vec3 deep = vec3(0.02, 0.08, 0.30);
+                vec3 lit  = vec3(0.30, 0.55, 1.0);
+                vec3 L = normalize(vec3(0.5, 0.8, 0.6));
+                float lambert = max(dot(N, L), 0.0);
+                vec3 c = mix(deep, lit, lambert * 0.8);
+                c += vec3(0.9, 0.95, 1.0) * pow(max(dot(reflect(-L, N), V), 0.0), 40.0) * 0.9;
+                c += vec3(0.2, 0.45, 1.0) * pow(1.0 - ndv, 3.0) * uGlow;
+                gl_FragColor = vec4(c, 1.0);
+            }
+        `,
+    }));
+    group.add(mesh);
+
+    return {
+        group,
+        setState(s) {
+            gsap.to(uniforms.uExplode, { value: s === 'thinking' ? 0.16 : 0, duration: 1.2, ease: 'power2.inOut' });
+            gsap.to(uniforms.uGlow,    { value: s === 'thinking' ? 1.0 : 0.4, duration: 1.2, ease: 'power2.inOut' });
+            gsap.to(params, { speed: s === 'thinking' ? 1.2 : 0.25, duration: 1.2, ease: 'power2.inOut' });
+        },
+        update(t) {
+            uniforms.uTime.value = t;
+            mesh.rotation.y = t * params.speed;
+            mesh.rotation.x = Math.sin(t * 0.2) * 0.3;
+        }
+    };
+}
+
+// 8 ── VORTEX ─ spiral galaxy disc; data being pulled into a center
+function formVortex() {
+    const group = new THREE.Group();
+    const N = 3200;
+    const pos = new Float32Array(N * 3);
+    const seed = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+        const r = 0.15 + Math.pow(Math.random(), 0.6) * 1.05;
+        const a = Math.random() * Math.PI * 2;
+        pos[i*3]     = Math.cos(a) * r;
+        pos[i*3 + 1] = (Math.random() - 0.5) * 0.08 * r;
+        pos[i*3 + 2] = Math.sin(a) * r;
+        seed[i] = Math.random();
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+
+    const uniforms = {
+        uTime: { value: 0 },
+        uSpin: { value: 0.35 },
+        uPull: { value: 0 },
+    };
+    group.add(new THREE.Points(geo, new THREE.ShaderMaterial({
+        uniforms, transparent: true, depthWrite: false,
+        vertexShader: `
+            attribute float aSeed;
+            uniform float uTime, uSpin, uPull;
+            varying float vShade;
+            void main() {
+                vec3 p = position;
+                float r = length(p.xz);
+                float a = atan(p.z, p.x) + uTime * uSpin * (1.2 / (r + 0.25));
+                float radius = mix(r, r * 0.72, uPull);
+                p.x = cos(a) * radius;
+                p.z = sin(a) * radius;
+                p.y *= mix(1.0, 0.5, uPull);
+                vec4 mv = modelViewMatrix * vec4(p, 1.0);
+                gl_PointSize = (1.6 + aSeed * 1.6 + uPull * 0.8) * (4.2 / -mv.z);
+                gl_Position = projectionMatrix * mv;
+                vShade = 1.0 - smoothstep(0.1, 1.2, radius);
+            }
+        `,
+        fragmentShader: `
+            varying float vShade;
+            void main() {
+                float d = length(gl_PointCoord - vec2(0.5));
+                if (d > 0.5) discard;
+                vec3 outer = vec3(0.0, 0.28, 0.62);
+                vec3 inner = vec3(0.9, 0.95, 1.0);
+                vec3 c = mix(outer, inner, vShade * vShade);
+                gl_FragColor = vec4(c, smoothstep(0.5, 0.1, d) * (0.35 + vShade * 0.65));
+            }
+        `,
+    })));
+
+    const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.09, 24, 24),
+        new THREE.MeshBasicMaterial({ color: ICE, transparent: true, opacity: 0.95 })
+    );
+    group.add(core);
+
+    group.rotation.x = 0.55;
+
+    return {
+        group,
+        setState(s) {
+            gsap.to(uniforms.uSpin, { value: s === 'thinking' ? 1.8 : 0.35, duration: 1.4, ease: 'power2.inOut' });
+            gsap.to(uniforms.uPull, { value: s === 'thinking' ? 1 : 0, duration: 1.4, ease: 'power2.inOut' });
+        },
+        update(t) {
+            uniforms.uTime.value = t;
+            core.scale.setScalar(1 + Math.sin(t * 3) * 0.15 + uniforms.uPull.value * 0.5);
+        }
+    };
+}
+
+// =====================================================================
+// GALLERY
+// =====================================================================
+const FORMS = [
+    { name: '01 · Aperture', tag: 'Minimal', make: formAperture,
+      desc: 'Three rings of light in slow precession — a camera shutter, an instrument. Thinking splits them into fast counter-rotation. The most restrained: no body at all, just optics.' },
+    { name: '02 · Swarm', tag: 'Collective', make: formSwarm,
+      desc: 'Thousands of particles agreeing to be a sphere. Thinking breaks the consensus — the shell scatters and vibrates. Reads as "many agents working for you."' },
+    { name: '03 · Silk', tag: 'Elegant', make: formSilk,
+      desc: 'An endless ribbon tied in a knot, ice stripes flowing along its length. Thinking turns the flow into a rush. No face, no eye — pure choreography.' },
+    { name: '04 · Blueprint', tag: 'Engineered', make: formBlueprint,
+      desc: 'Wireframe icosahedron with gold vertices and a burning blue core. Structure fully exposed. Thinking snaps rotation into stepped, digital ticks — machine cadence.' },
+    { name: '05 · Constellation', tag: 'Network', make: formConstellation,
+      desc: 'A neural graph on a shell: nodes, links, a few gold hot spots. Thinking fires waves across the links. The most literal "intelligence" metaphor.' },
+    { name: '06 · Pulse', tag: 'Signal', make: formPulse,
+      desc: 'A radial waveform — part voice assistant, part market monitor. Idle is a calm heartbeat; thinking is a volatile tape. Most native to a finance product.' },
+    { name: '07 · Shard', tag: 'Crystal', make: formShard,
+      desc: 'A faceted gem, flat planes of blue glass. Thinking fractures it — facets drift apart and glow, then seal back on completion. Satisfying "resolution" moment built in.' },
+    { name: '08 · Vortex', tag: 'Gravity', make: formVortex,
+      desc: 'A spiral disc of data grains orbiting a bright center. Thinking accelerates the spin and pulls everything inward — literally gathering context into a point.' },
+];
+
+const grid = document.getElementById('grid');
+const cells = [];
+
+FORMS.forEach((f) => {
+    try {
+        const card = document.createElement('div');
+        card.className = 'concept-card bg-white border border-border rounded-[22px] overflow-hidden flex flex-col';
+        card.innerHTML = `
+            <div class="relative h-72 bg-gradient-to-b from-stone to-white overflow-hidden">
+                <div class="stage-glow"></div>
+                <canvas class="absolute inset-0 w-full h-full"></canvas>
+            </div>
+            <div class="p-5">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="font-medium text-ink text-sm">${f.name}</h3>
+                    <span class="text-[9px] font-mono uppercase tracking-[0.2em] text-gold border border-border rounded-full px-2.5 py-1">${f.tag}</span>
+                </div>
+                <p class="text-xs text-gray-500 font-light leading-relaxed">${f.desc}</p>
+                <button class="toggle-btn mt-4 text-[10px] font-mono uppercase tracking-[0.2em] border border-border rounded-lg px-3 py-2 text-gray-500 hover:text-ink hover:border-ink transition" data-state="rest">
+                    Rest · click for Thinking
+                </button>
+            </div>`;
+        grid.appendChild(card);
+
+        const canvas = card.querySelector('canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 50);
+        camera.position.set(0, 0, 3.6);
+
+        const form = f.make();
+        scene.add(form.group);
+
+        function size() {
+            const r = canvas.parentElement.getBoundingClientRect();
+            if (r.width === 0) return;
+            renderer.setSize(r.width, r.height, false);
+            camera.aspect = r.width / r.height;
+            camera.updateProjectionMatrix();
+        }
+        size();
+        window.addEventListener('resize', size);
+        requestAnimationFrame(size);
+
+        const btn = card.querySelector('.toggle-btn');
+        btn.addEventListener('click', () => {
+            const next = btn.dataset.state === 'rest' ? 'thinking' : 'rest';
+            btn.dataset.state = next;
+            btn.textContent = next === 'thinking' ? 'Thinking · click for Rest' : 'Rest · click for Thinking';
+            form.setState(next);
+        });
+
+        cells.push({ renderer, scene, camera, form });
+    } catch (err) {
+        console.error('Form failed:', f.name, err);
+    }
+});
+
+const clock = new THREE.Clock();
+let rafId = null;
+function frame() {
+    rafId = requestAnimationFrame(frame);
+    const t = clock.getElapsedTime() * (REDUCED_MOTION ? 0.25 : 1);
+    cells.forEach(cell => {
+        cell.form.update(t);
+        cell.renderer.render(cell.scene, cell.camera);
+    });
+}
+frame();
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+    } else if (rafId === null) {
+        clock.getDelta();
+        frame();
+    }
+});
+
+gsap.from('.concept-card', { opacity: 0, y: 26, duration: 0.8, stagger: 0.06, ease: 'power3.out', delay: 0.15 });
+</script>
+</body>
+</html>

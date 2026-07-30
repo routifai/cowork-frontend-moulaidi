@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypatia V3 — Living Presence Concept</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ink: '#0d0d0f',
+                        surface: '#ffffff',
+                        stone: '#fafafa',
+                        border: '#e7e7e9',
+                        accent: '#0051a5',  // RBC blue
+                        gold: '#e8a821',    // RBC gold, muted
+                        success: '#10a37f'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        serif: ['Playfair Display', 'Georgia', 'serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    borderRadius: {
+                        panel: '22px',
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            background-color: #fbfbfc;
+            color: #0d0d0f;
+        }
+
+        .editorial-text {
+            font-family: 'Playfair Display', serif;
+            letter-spacing: -0.02em;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.62);
+            backdrop-filter: blur(28px) saturate(1.4);
+            -webkit-backdrop-filter: blur(28px) saturate(1.4);
+            border: 1px solid rgba(231, 231, 233, 0.9);
+            box-shadow: 0 12px 40px rgba(13, 13, 15, 0.05);
+        }
+
+        .subtle-shadow { box-shadow: 0 4px 20px rgba(13, 13, 15, 0.04); }
+
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+
+        input::placeholder, textarea::placeholder {
+            color: #a3a3a8;
+            font-weight: 300;
+        }
+
+        /* Film grain — sells the "rendered" look, kills flat-web feeling */
+        .grain {
+            position: fixed;
+            inset: 0;
+            z-index: 60;
+            pointer-events: none;
+            opacity: 0.035;
+            mix-blend-mode: multiply;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        /* Soft chromatic bloom that sits behind the orb in DOM space */
+        #orb-glow {
+            position: fixed;
+            width: 56vmin;
+            height: 56vmin;
+            border-radius: 9999px;
+            pointer-events: none;
+            z-index: 1;
+            background: radial-gradient(circle at 42% 38%,
+                rgba(46, 105, 255, 0.22) 0%,
+                rgba(64, 140, 255, 0.10) 32%,
+                rgba(120, 190, 255, 0.06) 55%,
+                rgba(255, 255, 255, 0) 72%);
+            filter: blur(6px);
+            transform: translate(-50%, -50%);
+        }
+
+        .vertical-label {
+            writing-mode: vertical-rl;
+            letter-spacing: 0.45em;
+        }
+
+        .caret-line {
+            width: 1px;
+            background: linear-gradient(to bottom, transparent, #0d0d0f 30%, #0d0d0f 70%, transparent);
+        }
+
+        .hairline-top { border-top: 1px solid rgba(13,13,15,0.06); }
+
+        /* Glitch slice — fires in short bursts via .glitching, never loops */
+        .glitch-text { position: relative; }
+        .glitch-text::before, .glitch-text::after {
+            content: attr(data-text);
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        .glitch-text.glitching::before {
+            opacity: 0.85;
+            color: #0051a5;
+            animation: glitch-slice-a 0.24s steps(2) both;
+        }
+        .glitch-text.glitching::after {
+            opacity: 0.85;
+            color: #e8a821;
+            animation: glitch-slice-b 0.24s steps(2) both;
+        }
+        @keyframes glitch-slice-a {
+            0%   { clip-path: inset(8% 0 62% 0);  transform: translate(-4px, 1px); }
+            50%  { clip-path: inset(42% 0 28% 0); transform: translate(3px, -1px); }
+            100% { clip-path: inset(70% 0 4% 0);  transform: translate(-2px, 0); }
+        }
+        @keyframes glitch-slice-b {
+            0%   { clip-path: inset(58% 0 16% 0); transform: translate(4px, -1px); }
+            50%  { clip-path: inset(12% 0 66% 0); transform: translate(-3px, 1px); }
+            100% { clip-path: inset(36% 0 42% 0); transform: translate(2px, 0); }
+        }
+
+        /* Market ticker */
+        .ticker-track {
+            animation: ticker 42s linear infinite;
+        }
+        @keyframes ticker {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-50%); }
+        }
+
+        /* Typewriter cursor */
+        .type-cursor {
+            display: inline-block;
+            width: 0.08em;
+            height: 0.85em;
+            background: #0d0d0f;
+            vertical-align: baseline;
+            margin-left: 2px;
+            animation: blink 1s steps(1) infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { animation: none !important; transition: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="grain"></div>
+    <div id="orb-glow"></div>
+    <canvas id="gl" class="fixed inset-0 z-[2] pointer-events-none"></canvas>
+
+    <!-- ============================================= -->
+    <!-- SCENE 1 : AUTH                                -->
+    <!-- ============================================= -->
+    <div id="auth-scene" class="absolute inset-0 z-10 flex w-full h-full">
+
+        <!-- Left : editorial + login -->
+        <div id="auth-left" class="w-1/2 h-full flex flex-col justify-center px-24 relative z-10">
+            <div class="absolute top-10 left-10 flex items-center space-x-3">
+                <div class="w-6 h-6 bg-ink rounded-full"></div>
+                <span class="font-semibold text-lg tracking-tight">Hypatia</span>
+            </div>
+
+            <div class="flex items-center space-x-3 mb-10">
+                <div class="w-1.5 h-1.5 rounded-full bg-gold animate-pulse"></div>
+                <span class="text-[11px] font-mono uppercase tracking-[0.3em] text-gray-400">Always-on agent workspace</span>
+            </div>
+
+            <div class="mb-10 overflow-hidden">
+                <h1 id="hero-line-1" data-text="Your work done." class="glitch-text text-6xl editorial-text text-ink leading-[1.12]">Your work done.</h1>
+                <h1 id="hero-line-2" data-text="With Hypatia." class="glitch-text text-6xl editorial-text italic text-gray-400 leading-[1.12]">With Hypatia.</h1>
+            </div>
+
+            <p id="hero-sub" class="text-gray-500 text-lg max-w-md mb-12 font-light leading-relaxed">
+                An always-on intelligence layer across your email, models and project files —
+                returning review-ready analysis in one calm workspace.
+            </p>
+
+            <div id="auth-form" class="max-w-[320px] space-y-4">
+                <input type="text" placeholder="Enterprise ID" class="w-full bg-white border border-border rounded-xl px-5 py-4 focus:outline-none focus:border-ink transition text-sm subtle-shadow">
+                <input type="password" placeholder="Password" class="w-full bg-white border border-border rounded-xl px-5 py-4 focus:outline-none focus:border-ink transition text-sm subtle-shadow">
+                <button id="login-btn" class="w-full bg-ink hover:bg-gray-800 text-white font-medium rounded-xl px-5 py-4 transition flex justify-between items-center mt-2">
+                    <span>Open Workspace</span>
+                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right : orb stage + floating proof cards -->
+        <div id="auth-right" class="w-1/2 h-full relative">
+            <div class="vertical-label absolute right-10 top-1/2 -translate-y-1/2 text-[11px] font-mono uppercase text-gray-300 z-10">Always on</div>
+
+            <div id="proof-card" class="glass-panel rounded-panel p-6 w-80 absolute left-4 bottom-24 z-10">
+                <div class="flex items-center space-x-3 mb-6">
+                    <div class="w-2 h-2 bg-success rounded-full animate-pulse"></div>
+                    <span class="text-[11px] font-mono text-gray-500 uppercase tracking-[0.25em]">Hypatia is working</span>
+                </div>
+                <div class="space-y-5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <i data-lucide="check" class="w-4 h-4 text-success"></i>
+                            <span class="text-sm font-medium">Read client email history</span>
+                        </div>
+                        <span class="text-xs font-mono text-gray-400">24 threads</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <i data-lucide="check" class="w-4 h-4 text-success"></i>
+                            <span class="text-sm font-medium">Updated valuation model</span>
+                        </div>
+                        <span class="text-xs font-mono text-gray-400">4 sheets</span>
+                    </div>
+                    <div class="flex items-center justify-between bg-stone -mx-3 px-3 py-2 rounded-xl border border-border">
+                        <div class="flex items-center space-x-3">
+                            <i data-lucide="loader-2" class="w-4 h-4 animate-spin text-accent"></i>
+                            <span class="text-sm font-medium">Building presentation</span>
+                        </div>
+                        <span class="text-xs font-mono text-accent">Live</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Market ticker — finance texture, quiet and mono -->
+        <div class="absolute bottom-0 left-0 right-0 z-10 border-t border-border bg-white/70 backdrop-blur-md overflow-hidden py-2.5">
+            <div class="ticker-track flex whitespace-nowrap text-[11px] font-mono text-gray-400" id="ticker"></div>
+        </div>
+    </div>
+
+    <!-- ============================================= -->
+    <!-- SCENE 2 : WORKSPACE                           -->
+    <!-- ============================================= -->
+    <div id="workspace-scene" class="absolute inset-0 z-20 flex w-full h-full opacity-0 pointer-events-none">
+
+        <!-- Sidebar -->
+        <div id="ws-sidebar" class="w-64 bg-stone/90 backdrop-blur border-r border-border h-full flex flex-col pt-8 pb-6 px-5 transform -translate-x-full z-30">
+            <div class="flex items-center space-x-3 mb-10 px-1">
+                <div class="w-5 h-5 bg-ink rounded-full"></div>
+                <span class="font-semibold text-base tracking-tight">Hypatia</span>
+            </div>
+
+            <button class="w-full bg-surface border border-border hover:border-ink text-ink rounded-xl py-2.5 flex items-center justify-center space-x-2 transition subtle-shadow mb-8">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span class="font-medium text-sm">New thread</span>
+            </button>
+
+            <nav class="space-y-1 mb-8">
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 bg-white rounded-lg shadow-sm border border-border text-ink font-medium text-sm">
+                    <i data-lucide="message-square" class="w-4 h-4"></i><span>Chat</span>
+                </a>
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-500 hover:text-ink transition text-sm font-medium">
+                    <i data-lucide="book-open" class="w-4 h-4"></i><span>Playbooks</span>
+                </a>
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-500 hover:text-ink transition text-sm font-medium">
+                    <i data-lucide="folder" class="w-4 h-4"></i><span>Files</span>
+                </a>
+            </nav>
+
+            <div class="flex-1 overflow-y-auto">
+                <div class="text-[11px] font-mono text-gray-400 uppercase tracking-[0.25em] px-2 mb-4">Recent</div>
+                <div class="space-y-1">
+                    <div class="px-3 py-2 text-sm text-ink font-medium hover:bg-gray-100 rounded-lg cursor-pointer truncate">Q3 Earnings Call Prep</div>
+                    <div class="px-3 py-2 text-sm text-gray-500 hover:text-ink hover:bg-gray-100 rounded-lg cursor-pointer truncate">Client Onboarding Flow</div>
+                    <div class="px-3 py-2 text-sm text-gray-500 hover:text-ink hover:bg-gray-100 rounded-lg cursor-pointer truncate">Market Analysis</div>
+                </div>
+            </div>
+
+            <div class="mt-auto pt-6">
+                <div class="flex items-center space-x-3 px-2 cursor-pointer group">
+                    <div class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium text-xs">SM</div>
+                    <div class="text-sm font-medium text-ink group-hover:underline truncate">Simo M.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div id="ws-main" class="flex-1 flex flex-col items-center justify-center relative opacity-0 translate-y-8">
+            <div class="w-full max-w-3xl px-8 flex flex-col items-center">
+
+                <!-- The orb lands in this reserved space -->
+                <div id="orb-anchor" class="h-36 w-full"></div>
+
+                <div class="mb-10 text-center">
+                    <h2 id="greeting" data-text="What are we working on, Simo?" class="glitch-text text-4xl editorial-text text-ink mb-3 min-h-[1.3em]"><span id="greeting-text"></span><span class="type-cursor" id="greeting-cursor"></span></h2>
+                    <p id="orb-status" class="text-gray-400 font-light text-sm tracking-wide">Describe the outcome. Hypatia will map the work.</p>
+                </div>
+
+                <!-- Composer -->
+                <div id="composer" class="w-full glass-panel rounded-panel p-3 mb-10 transition-all">
+                    <textarea id="composer-input" class="w-full px-4 py-4 text-lg text-ink focus:outline-none resize-none h-24 bg-transparent placeholder-gray-400 font-light" placeholder="E.g., Prep the Q3 earnings recap and draft the client follow-up…"></textarea>
+
+                    <div class="flex items-center justify-between px-2 pb-1 hairline-top pt-3">
+                        <div class="flex items-center space-x-2">
+                            <button class="flex items-center space-x-1.5 text-xs font-medium text-gray-500 hover:text-ink bg-stone px-3 py-1.5 rounded-lg border border-border transition">
+                                <i data-lucide="plus" class="w-3.5 h-3.5"></i><span>Context</span>
+                            </button>
+                            <button class="flex items-center space-x-1.5 text-xs font-medium text-gray-500 hover:text-ink bg-stone px-3 py-1.5 rounded-lg border border-border transition">
+                                <i data-lucide="cpu" class="w-3.5 h-3.5"></i><span>Local Engine</span>
+                                <i data-lucide="chevron-down" class="w-3 h-3 ml-1"></i>
+                            </button>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div id="ready-pill" class="flex items-center space-x-1.5 text-[11px] font-mono text-success">
+                                <div class="w-1.5 h-1.5 bg-success rounded-full"></div><span>READY</span>
+                            </div>
+                            <button id="send-btn" class="p-2 bg-ink text-white rounded-lg hover:bg-gray-800 transition shadow-sm">
+                                <i data-lucide="arrow-up" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live agent trace (hidden until a run starts) -->
+                <div id="agent-trace" class="w-full glass-panel rounded-panel p-6 mb-10 hidden">
+                    <div class="flex items-center justify-between mb-5">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-2 h-2 bg-accent rounded-full animate-pulse"></div>
+                            <span class="text-[11px] font-mono text-gray-500 uppercase tracking-[0.25em]">Mapping the work</span>
+                        </div>
+                        <span class="text-[11px] font-mono text-gray-400" id="trace-count">0 / 4 steps</span>
+                    </div>
+                    <div id="trace-steps" class="space-y-4"></div>
+                </div>
+
+                <!-- Playbooks -->
+                <div id="playbooks" class="w-full">
+                    <div class="flex items-center justify-between mb-6 px-1">
+                        <h3 class="text-[11px] font-mono text-gray-400 uppercase tracking-[0.25em]">Guided Workflows</h3>
+                        <a href="#" class="text-xs font-medium text-ink hover:underline flex items-center">View all <i data-lucide="arrow-right" class="w-3 h-3 ml-1"></i></a>
+                    </div>
+                    <div class="grid grid-cols-4 gap-4">
+                        <div class="pb-card bg-surface p-5 rounded-2xl border border-border hover:border-ink hover:shadow-md transition cursor-pointer group">
+                            <i data-lucide="file-text" class="w-5 h-5 text-gray-400 group-hover:text-ink mb-6 transition-colors"></i>
+                            <h4 class="text-sm font-medium text-ink mb-1">Company profile</h4>
+                            <p class="text-xs text-gray-500 font-light">One-page tear sheet</p>
+                        </div>
+                        <div class="pb-card bg-surface p-5 rounded-2xl border border-border hover:border-ink hover:shadow-md transition cursor-pointer group">
+                            <i data-lucide="table" class="w-5 h-5 text-gray-400 group-hover:text-ink mb-6 transition-colors"></i>
+                            <h4 class="text-sm font-medium text-ink mb-1">Comp table builder</h4>
+                            <p class="text-xs text-gray-500 font-light">Formatted comparables</p>
+                        </div>
+                        <div class="pb-card bg-surface p-5 rounded-2xl border border-border hover:border-ink hover:shadow-md transition cursor-pointer group">
+                            <i data-lucide="headphones" class="w-5 h-5 text-gray-400 group-hover:text-ink mb-6 transition-colors"></i>
+                            <h4 class="text-sm font-medium text-ink mb-1">Earnings recap</h4>
+                            <p class="text-xs text-gray-500 font-light">Transcript to summary</p>
+                        </div>
+                        <div class="pb-card bg-surface p-5 rounded-2xl border border-border hover:border-ink hover:shadow-md transition cursor-pointer group">
+                            <i data-lucide="mail" class="w-5 h-5 text-gray-400 group-hover:text-ink mb-6 transition-colors"></i>
+                            <h4 class="text-sm font-medium text-ink mb-1">Email drafter</h4>
+                            <p class="text-xs text-gray-500 font-light">Client-ready drafts</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+<script>
+lucide.createIcons();
+
+// =====================================================================
+// WEBGL — THE LIVING PRESENCE
+// One orb. Custom GLSL: simplex-displaced icosphere with thin-film
+// iridescence. It is the product's "pulse": idle → listening →
+// thinking → settled. It survives the auth→workspace transition.
+// =====================================================================
+
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 9);
+
+// ---- GLSL: 3D simplex noise (Ashima) --------------------------------
+const SNOISE = `
+vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+      i.z + vec4(0.0, i1.z, i2.z, 1.0))
+    + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+    + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0)*2.0 + 1.0;
+  vec4 s1 = floor(b1)*2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+`;
+
+// ---- Orb shader -----------------------------------------------------
+const orbVertex = SNOISE + `
+uniform float uTime;
+uniform float uAmp;
+uniform float uFreq;
+uniform float uSpeed;
+uniform float uGlitch;
+varying vec3 vNormal;
+varying vec3 vViewDir;
+varying float vDisp;
+
+float displace(vec3 dir, float t) {
+  // Low frequency, single octave dominant: liquid chrome, not organic lumps.
+  float n1 = snoise(dir * uFreq + vec3(t * 0.7, t * 0.55, t * 0.4));
+  float n2 = snoise(dir * uFreq * 2.0 + vec3(-t * 0.5, t * 0.7, t * 0.4)) * 0.15;
+  return (n1 + n2) * uAmp;
+}
+
+vec3 orthogonal(vec3 v) {
+  return normalize(abs(v.x) > abs(v.z)
+    ? vec3(-v.y, v.x, 0.0)
+    : vec3(0.0, -v.z, v.y));
+}
+
+void main() {
+  float t = uTime * uSpeed;
+  float radius = length(position);
+  vec3 dir = normalize(position);
+
+  float d = displace(dir, t);
+  vec3 displaced = dir * (radius + d);
+
+  // Recompute the normal from two displaced neighbours on the sphere
+  // so lighting follows the deformation instead of the base sphere.
+  float eps = 0.08;
+  vec3 tangent = orthogonal(dir);
+  vec3 bitangent = normalize(cross(dir, tangent));
+  vec3 nDir1 = normalize(dir + tangent * eps);
+  vec3 nDir2 = normalize(dir + bitangent * eps);
+  vec3 p1 = nDir1 * (radius + displace(nDir1, t));
+  vec3 p2 = nDir2 * (radius + displace(nDir2, t));
+  vec3 newNormal = normalize(cross(p1 - displaced, p2 - displaced));
+
+  // Glitch burst: horizontal band tearing, quantized in time so it
+  // reads as digital corruption, not wobble.
+  if (uGlitch > 0.001) {
+    float bandId = floor((dir.y + 1.0) * 7.0);
+    float frameQ = floor(uTime * 24.0);
+    float tear = step(0.62, fract(sin(bandId * 91.7 + frameQ * 7.31) * 43758.5453));
+    displaced.x += uGlitch * tear * 0.16 * sin(bandId * 3.0 + frameQ);
+  }
+
+  vDisp = d;
+  vNormal = normalize(normalMatrix * newNormal);
+  vec4 mv = modelViewMatrix * vec4(displaced, 1.0);
+  vViewDir = normalize(-mv.xyz);
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+const orbFragment = `
+uniform float uTime;
+uniform float uEnergy;   // 0 idle … 1 thinking (drives hue intensity)
+uniform float uGlitch;
+varying vec3 vNormal;
+varying vec3 vViewDir;
+varying float vDisp;
+
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 V = normalize(vViewDir);
+  float ndv = clamp(dot(N, V), 0.0, 1.0);
+  float fresnel = pow(1.0 - ndv, 2.2);
+
+  // Chrome sapphire: deep royal blue core, electric blue mid,
+  // ice-white swirl bands following the surface deformation.
+  vec3 deep = vec3(0.02, 0.07, 0.38);
+  vec3 mid  = vec3(0.10, 0.32, 0.92);
+  vec3 ice  = vec3(0.86, 0.94, 1.00);
+
+  float band = 0.5 + 0.5 * sin(vDisp * 9.0 + ndv * 4.0 + uTime * 0.15);
+  vec3 film = mix(mid, ice, smoothstep(0.35, 0.95, band));
+
+  vec3 color = mix(deep, film, 0.25 + fresnel * (0.6 + uEnergy * 0.2));
+
+  // Liquid-chrome swirl: raised regions catch a white streak.
+  float streak = smoothstep(0.10, 0.30, vDisp) * (0.5 + 0.5 * ndv);
+  color = mix(color, ice, streak * 0.55);
+
+  // Two studio lights: bright key, soft cool rim.
+  vec3 keyDir = normalize(vec3(0.5, 0.8, 0.6));
+  float keySpec = pow(max(dot(reflect(-keyDir, N), V), 0.0), 60.0);
+  color += vec3(1.0) * keySpec * 1.1;
+
+  vec3 rimDir = normalize(vec3(-0.7, -0.3, 0.4));
+  float rimSpec = pow(max(dot(reflect(-rimDir, N), V), 0.0), 28.0);
+  color += vec3(0.7, 0.85, 1.0) * rimSpec * 0.35;
+
+  // Edge lift keeps the silhouette readable on the light background.
+  color += mix(mid, ice, 0.6) * pow(1.0 - ndv, 4.0) * 0.45;
+
+  // Glitch burst: scanline shimmer + channel skew.
+  if (uGlitch > 0.001) {
+    float scan = sin(gl_FragCoord.y * 1.7 + uTime * 90.0);
+    color += vec3(0.08, 0.25, 0.85) * uGlitch * scan * 0.14;
+    float skew = sin(gl_FragCoord.y * 0.6);
+    color.r += uGlitch * skew * 0.10;
+    color.b -= uGlitch * skew * 0.07;
+  }
+
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+const orbUniforms = {
+    uTime:   { value: 0 },
+    uAmp:    { value: 0.22 },
+    uFreq:   { value: 0.95 },
+    uSpeed:  { value: REDUCED_MOTION ? 0.08 : 0.32 },
+    uEnergy: { value: 0 },
+    uGlitch: { value: 0 },
+};
+
+const orbGroup = new THREE.Group();
+const orbMesh = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.55, 96),
+    new THREE.ShaderMaterial({
+        vertexShader: orbVertex,
+        fragmentShader: orbFragment,
+        uniforms: orbUniforms,
+    })
+);
+orbGroup.add(orbMesh);
+
+// ---- Orbit ring: fine particles circling the orb --------------------
+const RING_COUNT = 900;
+const ringGeometry = new THREE.BufferGeometry();
+const ringPositions = new Float32Array(RING_COUNT * 3);
+const ringPhases = new Float32Array(RING_COUNT);
+for (let i = 0; i < RING_COUNT; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = 2.1 + Math.random() * 1.6;
+    const y = (Math.random() - 0.5) * 0.55;
+    ringPositions[i * 3]     = Math.cos(angle) * radius;
+    ringPositions[i * 3 + 1] = y;
+    ringPositions[i * 3 + 2] = Math.sin(angle) * radius;
+    ringPhases[i] = Math.random() * Math.PI * 2;
+}
+ringGeometry.setAttribute('position', new THREE.BufferAttribute(ringPositions, 3));
+ringGeometry.setAttribute('aPhase', new THREE.BufferAttribute(ringPhases, 1));
+
+const ringUniforms = {
+    uTime:    { value: 0 },
+    uTighten: { value: 0 }, // 1 = thinking: ring contracts + accelerates
+};
+const ringMaterial = new THREE.ShaderMaterial({
+    uniforms: ringUniforms,
+    transparent: true,
+    depthWrite: false,
+    vertexShader: `
+        attribute float aPhase;
+        uniform float uTime;
+        uniform float uTighten;
+        varying float vAlpha;
+        void main() {
+            vec3 pos = position;
+            float r = length(pos.xz);
+            float baseAngle = atan(pos.z, pos.x);
+            float speed = mix(0.05, 0.5, uTighten) * (2.6 / r);
+            float angle = baseAngle + uTime * speed + aPhase * 0.02;
+            float radius = mix(r, r * 0.62, uTighten);
+            pos.x = cos(angle) * radius;
+            pos.z = sin(angle) * radius;
+            pos.y *= mix(1.0, 0.4, uTighten);
+            vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+            gl_PointSize = 2.2 * (9.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+            vAlpha = (0.16 + 0.5 * abs(sin(aPhase + uTime * 0.6))) * mix(0.55, 1.0, uTighten);
+        }
+    `,
+    fragmentShader: `
+        varying float vAlpha;
+        void main() {
+            float dist = length(gl_PointCoord - vec2(0.5));
+            if (dist > 0.5) discard;
+            gl_FragColor = vec4(vec3(0.15, 0.3, 0.75), smoothstep(0.5, 0.1, dist) * vAlpha);
+        }
+    `,
+});
+const ring = new THREE.Points(ringGeometry, ringMaterial);
+ring.rotation.x = 0.42;
+orbGroup.add(ring);
+
+scene.add(orbGroup);
+
+// ---- Placement: anchor 3D orb to screen positions -------------------
+// Converts an NDC point to world space on the z=0 plane, so the orb can
+// be pinned to layout positions and survive resizes.
+function ndcToWorld(nx, ny) {
+    const v = new THREE.Vector3(nx, ny, 0.5).unproject(camera);
+    const dir = v.sub(camera.position).normalize();
+    const t = -camera.position.z / dir.z;
+    return camera.position.clone().add(dir.multiplyScalar(t));
+}
+
+const SIDEBAR_W = 256;
+function orbTargetNDC() {
+    if (appState.scene === 'auth') return { x: 0.5, y: 0.05, scale: 1 };
+    // Workspace: centered over the main column, above the greeting.
+    const cx = ((SIDEBAR_W + (window.innerWidth - SIDEBAR_W) / 2) / window.innerWidth) * 2 - 1;
+    return { x: cx, y: 0.52, scale: 0.30 };
+}
+
+function placeOrb(immediate) {
+    const t = orbTargetNDC();
+    const world = ndcToWorld(t.x, t.y);
+    if (immediate) {
+        orbGroup.position.copy(world);
+        orbGroup.scale.setScalar(t.scale);
+    } else {
+        gsap.to(orbGroup.position, { x: world.x, y: world.y, z: world.z, duration: 1.6, ease: 'power3.inOut' });
+        gsap.to(orbGroup.scale, { x: t.scale, y: t.scale, z: t.scale, duration: 1.6, ease: 'power3.inOut' });
+    }
+    syncGlow();
+}
+
+// DOM glow follows the orb's screen position.
+const glowEl = document.getElementById('orb-glow');
+function syncGlow() {
+    const t = orbTargetNDC();
+    const px = (t.x * 0.5 + 0.5) * window.innerWidth;
+    const py = (1 - (t.y * 0.5 + 0.5)) * window.innerHeight;
+    gsap.to(glowEl, {
+        left: px, top: py,
+        width: `${56 * t.scale}vmin`, height: `${56 * t.scale}vmin`,
+        duration: 1.6, ease: 'power3.inOut',
+    });
+}
+
+// ---- App state machine ---------------------------------------------
+// idle: slow breathing · listening: focused, tight surface
+// thinking: agitated, ring contracts · settled: calm satisfaction
+const appState = { scene: 'auth', mode: 'idle' };
+
+const MODES = {
+    idle:      { amp: 0.22, speed: 0.32, energy: 0.0,  tighten: 0.0 },
+    listening: { amp: 0.12, speed: 0.55, energy: 0.35, tighten: 0.15 },
+    thinking:  { amp: 0.42, speed: 1.05, energy: 1.0,  tighten: 1.0 },
+    settled:   { amp: 0.15, speed: 0.22, energy: 0.15, tighten: 0.0 },
+};
+
+function setMode(mode) {
+    if (appState.mode === mode) return;
+    appState.mode = mode;
+    const m = MODES[mode];
+    const speedScale = REDUCED_MOTION ? 0.25 : 1;
+    gsap.to(orbUniforms.uAmp,    { value: m.amp, duration: 1.4, ease: 'power2.inOut' });
+    gsap.to(orbUniforms.uSpeed,  { value: m.speed * speedScale, duration: 1.4, ease: 'power2.inOut' });
+    gsap.to(orbUniforms.uEnergy, { value: m.energy, duration: 1.4, ease: 'power2.inOut' });
+    gsap.to(ringUniforms.uTighten, { value: m.tighten, duration: 1.8, ease: 'power2.inOut' });
+}
+
+// ---- Pointer parallax ----------------------------------------------
+let mouseX = 0, mouseY = 0;
+document.addEventListener('mousemove', (e) => {
+    mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+    mouseY = (e.clientY / window.innerHeight) * 2 - 1;
+});
+
+// ---- Render loop (paused when tab hidden) ---------------------------
+const clock = new THREE.Clock();
+let rafId = null;
+
+function frame() {
+    rafId = requestAnimationFrame(frame);
+    const t = clock.getElapsedTime();
+    orbUniforms.uTime.value = t;
+    ringUniforms.uTime.value = t;
+
+    if (!REDUCED_MOTION) {
+        orbGroup.rotation.y += ((mouseX * 0.35) - orbGroup.rotation.y) * 0.03;
+        orbGroup.rotation.x += ((mouseY * 0.2) - orbGroup.rotation.x) * 0.03;
+    }
+    orbMesh.rotation.y = t * 0.05;
+
+    renderer.render(scene, camera);
+}
+frame();
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+    } else if (rafId === null) {
+        clock.getDelta();
+        frame();
+    }
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    placeOrb(true);
+});
+
+placeOrb(true);
+
+// =====================================================================
+// GLITCH DIRECTOR
+// Rare, short bursts (~250ms). Fires on state changes and occasionally
+// at rest — corruption as punctuation, never as texture.
+// =====================================================================
+function glitchBurst(strength = 1) {
+    if (REDUCED_MOTION) return;
+    gsap.fromTo(orbUniforms.uGlitch,
+        { value: strength },
+        { value: 0, duration: 0.32, ease: 'steps(4)' });
+    document.querySelectorAll('.glitch-text').forEach(el => {
+        el.classList.add('glitching');
+        setTimeout(() => el.classList.remove('glitching'), 260);
+    });
+}
+setInterval(() => { if (Math.random() < 0.5) glitchBurst(0.6); }, 8000);
+
+// =====================================================================
+// MARKET TICKER
+// =====================================================================
+const TICKER_DATA = [
+    ['RY.TO', '168.42', '+0.84%', true],
+    ['TD.TO', '82.15', '-0.22%', false],
+    ['S&P/TSX', '24 891.07', '+0.31%', true],
+    ['USD/CAD', '1.3642', '+0.05%', true],
+    ['US 10Y', '4.182%', '-2.1bp', false],
+    ['SHOP.TO', '112.77', '+1.92%', true],
+    ['ENB.TO', '59.03', '+0.14%', true],
+    ['WTI', '78.51', '-0.47%', false],
+];
+const tickerEl = document.getElementById('ticker');
+tickerEl.innerHTML = [...TICKER_DATA, ...TICKER_DATA].map(([sym, px, chg, up]) => `
+    <span class="inline-flex items-center px-6 space-x-2">
+        <span class="text-ink font-medium">${sym}</span>
+        <span>${px}</span>
+        <span class="${up ? 'text-success' : 'text-red-400'}">${up ? '▲' : '▼'} ${chg}</span>
+        <span class="text-gold pl-6">·</span>
+    </span>`).join('');
+
+// =====================================================================
+// SCENE CHOREOGRAPHY
+// =====================================================================
+
+// Entrance: type reveals, then the orb breathes in.
+gsap.from(['#hero-line-1', '#hero-line-2'], { yPercent: 110, duration: 1.2, stagger: 0.12, ease: 'power3.out', delay: 0.15 });
+gsap.from(['#hero-sub', '#auth-form'], { opacity: 0, y: 18, duration: 1, stagger: 0.1, ease: 'power2.out', delay: 0.55 });
+gsap.from('#proof-card', { opacity: 0, y: 26, duration: 1.2, ease: 'power3.out', delay: 0.9 });
+gsap.from(orbGroup.scale, { x: 0.001, y: 0.001, z: 0.001, duration: 2.0, ease: 'expo.out', delay: 0.3 });
+
+// Auth → workspace: the orb is the continuity — everything else yields to it.
+const loginBtn = document.getElementById('login-btn');
+loginBtn.addEventListener('click', () => {
+    loginBtn.disabled = true;
+    loginBtn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i><span>Authenticating…</span>';
+    lucide.createIcons();
+
+    glitchBurst(1);
+    setMode('thinking');
+
+    const tl = gsap.timeline({
+        onComplete: () => {
+            document.getElementById('auth-scene').style.display = 'none';
+            document.getElementById('workspace-scene').style.pointerEvents = 'auto';
+            setMode('idle');
+        }
+    });
+
+    tl.to('#proof-card', { opacity: 0, y: -24, duration: 0.7, ease: 'power2.inOut' }, '+=0.35');
+    tl.to('#auth-left', { xPercent: -100, opacity: 0, duration: 1, ease: 'power3.inOut' }, '-=0.4');
+    tl.to('.vertical-label', { opacity: 0, duration: 0.4 }, '<');
+
+    tl.add(() => { appState.scene = 'workspace'; placeOrb(false); }, '-=0.55');
+
+    tl.to('#workspace-scene', { opacity: 1, duration: 0.15 }, '-=0.9');
+    tl.to('#ws-sidebar', { x: 0, duration: 1, ease: 'power3.out' }, '-=0.7');
+    tl.to('#ws-main', { opacity: 1, y: 0, duration: 1, ease: 'power3.out' }, '-=0.75');
+    tl.from('.pb-card', { opacity: 0, y: 16, duration: 0.7, stagger: 0.08, ease: 'power2.out' }, '-=0.6');
+    tl.add(typeGreeting, '-=0.8');
+});
+
+// Token-by-token greeting — the "AI generation" texture, done quietly.
+function typeGreeting() {
+    const full = 'What are we working on, Simo?';
+    const target = document.getElementById('greeting-text');
+    const cursor = document.getElementById('greeting-cursor');
+    if (REDUCED_MOTION) {
+        target.textContent = full;
+        cursor.style.display = 'none';
+        return;
+    }
+    let i = 0;
+    (function tick() {
+        // Variable cadence: bursts of 1–3 chars, like token streaming.
+        i = Math.min(full.length, i + 1 + Math.floor(Math.random() * 2));
+        target.textContent = full.slice(0, i);
+        if (i < full.length) {
+            setTimeout(tick, 30 + Math.random() * 55);
+        } else {
+            setTimeout(() => { cursor.style.display = 'none'; }, 1200);
+        }
+    })();
+}
+
+// Composer focus → the orb leans in and listens.
+const composerInput = document.getElementById('composer-input');
+const orbStatus = document.getElementById('orb-status');
+
+composerInput.addEventListener('focus', () => {
+    if (appState.mode !== 'thinking') {
+        setMode('listening');
+        orbStatus.textContent = 'Listening.';
+    }
+});
+composerInput.addEventListener('blur', () => {
+    if (appState.mode === 'listening') {
+        setMode('idle');
+        orbStatus.textContent = 'Describe the outcome. Hypatia will map the work.';
+    }
+});
+
+// Each keystroke sends a tiny ripple through the surface.
+let rippleTween = null;
+composerInput.addEventListener('input', () => {
+    if (appState.mode === 'thinking' || REDUCED_MOTION) return;
+    if (rippleTween) rippleTween.kill();
+    rippleTween = gsap.fromTo(orbUniforms.uAmp,
+        { value: MODES.listening.amp + 0.09 },
+        { value: MODES.listening.amp, duration: 0.6, ease: 'power2.out' });
+});
+
+// Send → thinking demo: agent trace streams in, then everything settles.
+const TRACE_STEPS = [
+    { icon: 'mail',         label: 'Reading client email history', meta: '24 threads' },
+    { icon: 'mic',          label: 'Adding notetaker context',     meta: '6 meetings' },
+    { icon: 'table',        label: 'Updating valuation model',     meta: '4 sheets' },
+    { icon: 'presentation', label: 'Building presentation',        meta: '12 slides' },
+];
+
+let running = false;
+document.getElementById('send-btn').addEventListener('click', () => {
+    if (running) return;
+    running = true;
+
+    glitchBurst(0.8);
+    setMode('thinking');
+    orbStatus.textContent = 'Mapping the work…';
+    document.getElementById('ready-pill').innerHTML =
+        '<div class="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></div><span class="text-accent">RUNNING</span>';
+
+    const trace = document.getElementById('agent-trace');
+    const stepsEl = document.getElementById('trace-steps');
+    const countEl = document.getElementById('trace-count');
+    stepsEl.innerHTML = '';
+    trace.classList.remove('hidden');
+    gsap.fromTo(trace, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.7, ease: 'power3.out' });
+    gsap.to('#playbooks', { opacity: 0.25, duration: 0.6 });
+
+    TRACE_STEPS.forEach((step, i) => {
+        setTimeout(() => {
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between';
+            row.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <i data-lucide="loader-2" class="w-4 h-4 animate-spin text-accent step-icon"></i>
+                    <span class="text-sm font-medium">${step.label}</span>
+                </div>
+                <span class="text-xs font-mono text-gray-400">${step.meta}</span>`;
+            stepsEl.appendChild(row);
+            lucide.createIcons();
+            gsap.from(row, { opacity: 0, x: -12, duration: 0.5, ease: 'power2.out' });
+            countEl.textContent = `${i + 1} / ${TRACE_STEPS.length} steps`;
+
+            // Previous step resolves to a check.
+            if (i > 0) resolveStep(stepsEl.children[i - 1]);
+
+            if (i === TRACE_STEPS.length - 1) {
+                setTimeout(() => {
+                    resolveStep(row);
+                    setMode('settled');
+                    orbStatus.textContent = 'Review-ready. 4 outputs waiting.';
+                    document.getElementById('ready-pill').innerHTML =
+                        '<div class="w-1.5 h-1.5 bg-success rounded-full"></div><span>DONE</span>';
+                    gsap.to('#playbooks', { opacity: 1, duration: 0.8 });
+                    running = false;
+                }, 1400);
+            }
+        }, 900 + i * 1300);
+    });
+});
+
+function resolveStep(row) {
+    const icon = row.querySelector('.step-icon');
+    if (!icon) return;
+    icon.outerHTML = '<i data-lucide="check" class="w-4 h-4 text-success"></i>';
+    lucide.createIcons();
+}
+</script>
+</body>
+</html>
