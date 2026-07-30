@@ -1385,3 +1385,71 @@ body[data-wallpaper]::before {
 		opacity: 0;
 	}
 }
+
+/* ── V3 gate scope — fixed light editorial palette, deliberately
+      independent of the app theme (reference: new-design/reference/
+      v3-concept.html). Never inherits dark mode. ── */
+.v3-gate {
+	background: #fbfbfc;
+	color: #0d0d0f;
+	font-family: "Inter", system-ui, sans-serif;
+}
+.v3-serif {
+	font-family: "Playfair Display", Georgia, serif;
+	letter-spacing: -0.02em;
+}
+.v3-mono {
+	font-family: "JetBrains Mono", monospace;
+}
+.v3-grain {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	opacity: 0.035;
+	mix-blend-mode: multiply;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.v3-glow {
+	position: absolute;
+	width: 56vmin;
+	height: 56vmin;
+	border-radius: 9999px;
+	pointer-events: none;
+	transform: translate(-50%, -50%);
+	filter: blur(6px);
+	background: radial-gradient(
+		circle at 42% 38%,
+		rgba(46, 105, 255, 0.22) 0%,
+		rgba(64, 140, 255, 0.1) 32%,
+		rgba(120, 190, 255, 0.06) 55%,
+		rgba(255, 255, 255, 0) 72%
+	);
+	transition:
+		left 1.4s cubic-bezier(0.2, 0.8, 0.2, 1),
+		top 1.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.v3-shimmer {
+	background: linear-gradient(90deg, #a3a3a8 30%, #0d0d0f 50%, #a3a3a8 70%);
+	background-size: 200% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	animation: hy-v3-shimmer 1.8s linear infinite;
+}
+@keyframes hy-v3-shimmer {
+	from {
+		background-position: 200% 0;
+	}
+	to {
+		background-position: -200% 0;
+	}
+}
+.v3-vertical-label {
+	writing-mode: vertical-rl;
+	letter-spacing: 0.45em;
+}
+@media (prefers-reduced-motion: reduce) {
+	.v3-shimmer {
+		animation: none !important;
+	}
+}
