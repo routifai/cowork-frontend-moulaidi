@@ -30,6 +30,7 @@
 		"@uiw/react-md-editor": "^4.1.1",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
+		"gsap": "^3.15.0",
 		"lucide-react": "^1.11.0",
 		"motion": "^12.40.0",
 		"prism-react-renderer": "^2.4.1",
@@ -38,6 +39,7 @@
 		"react-markdown": "^10.1.0",
 		"remark-gfm": "^4.0.1",
 		"tailwind-merge": "^3.5.0",
+		"three": "^0.185.1",
 		"unist-util-visit": "^5.1.0"
 	},
 	"devDependencies": {
@@ -50,6 +52,7 @@
 		"@types/hast": "^3.0.4",
 		"@types/react": "^19.1.0",
 		"@types/react-dom": "^19.1.0",
+		"@types/three": "^0.185.1",
 		"@vitejs/plugin-react": "^4.4.0",
 		"autoprefixer": "^10.4.21",
 		"jsdom": "^29.1.0",

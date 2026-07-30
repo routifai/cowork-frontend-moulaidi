@@ -2,6 +2,7 @@ import { ChatMessageItem } from "@/components/ChatMessage";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { InThreadFind } from "@/components/InThreadFind";
 import { MessageInput } from "@/components/MessageInput";
+import { usePresence } from "@/hooks/usePresence";
 import type { ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
 import { motion, useReducedMotion } from "motion/react";
@@ -69,6 +70,42 @@ export function ChatView({
 	const inputRef = useRef<{ focus: () => void }>(null);
 	const isUserScrolledUp = useRef(false);
 	const [detailsExpanded, setDetailsExpanded] = useState(false);
+
+	// ── V3 presence (the Pulse avatar) ──
+	// Rests in the composer dock; flies to the thinking dock while the agent
+	// works with no visible output yet; back to the composer while responding.
+	const presence = usePresence();
+	const thinkingDockRef = useRef<HTMLDivElement>(null);
+	const isThinking = isRunning && !streamingMessage?.content;
+
+	// biome-ignore lint/correctness/useExhaustiveDependencies: presence API is stable
+	useEffect(() => {
+		if (isThinking && thinkingDockRef.current) {
+			presence.glitch(0.8);
+			presence.setMode("thinking");
+			presence.setAnchor(thinkingDockRef.current, 1.1);
+			return;
+		}
+		const composerSlot = document.getElementById("presence-composer-slot");
+		if (isRunning) {
+			presence.glitch(0.5);
+			presence.setMode("speaking");
+		} else {
+			presence.setMode("rest");
+		}
+		presence.setAnchor(composerSlot);
+	}, [isThinking, isRunning]);
+
+	// First layout after mount: park the presence in the composer instantly
+	// instead of flying in from world origin.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: mount-only
+	useEffect(() => {
+		const id = requestAnimationFrame(() => {
+			presence.setAnchor(document.getElementById("presence-composer-slot"));
+			presence.snapToAnchor();
+		});
+		return () => cancelAnimationFrame(id);
+	}, []);
 
 	// ── In-thread find (Cmd/Ctrl+F) ──
 	const [findOpen, setFindOpen] = useState(false);
@@ -297,6 +334,21 @@ export function ChatView({
 										Ctrl+↑ to edit all queued messages
 									</div>
 								</div>
+							</div>
+						)}
+						{/* Thinking dock: the Pulse flies here (64px) while the agent
+						    works before any visible output. Unmounts on first token —
+						    the presence then chases the composer slot again. */}
+						{isThinking && (
+							<div
+								data-testid="presence-thinking-dock"
+								className="mx-auto flex w-full items-center gap-4 px-4 py-3"
+								style={{ maxWidth: "var(--chat-max-width, 820px)" }}
+							>
+								<div ref={thinkingDockRef} className="h-14 w-14 shrink-0" aria-hidden="true" />
+								<span className="animate-shimmer-text text-sm font-light">
+									Mapping the work…
+								</span>
 							</div>
 						)}
 						<div ref={messagesEndRef} />

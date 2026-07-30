@@ -512,6 +512,16 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 							)}
 						</div>
 
+						{/* Dock for the WebGL presence (V3 design): the Pulse avatar
+						    rests here between turns. Empty on purpose — the canvas
+						    overlay draws on top of it, anchored via ChatView. */}
+						<div
+							id="presence-composer-slot"
+							data-testid="presence-composer-slot"
+							className="ml-auto mr-1.5 h-7 w-7 shrink-0"
+							aria-hidden="true"
+						/>
+
 						{/* Right CTA. While streaming with an empty composer it's a Stop
 						    button (replaces the old StatusBar's Stop); once the user types
 						    a steering message it becomes Send (Enter also steers). Idle =
