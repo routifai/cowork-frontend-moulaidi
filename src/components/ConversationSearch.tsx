@@ -268,52 +268,44 @@ export function ConversationSearch({
 
 	return (
 		<div className="flex flex-col h-full min-h-0">
-			{/* ── Header ── */}
-			<div className="flex items-center justify-between px-4 pt-3 pb-2">
-				<span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-					Sessions
-				</span>
-				<div className="flex items-center gap-1.5">
-					<motion.button
-						type="button"
-						onClick={onNewSession}
-						aria-label="New session"
-						title="New session in your Hypatia Cowork folder"
-						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-primary bg-primary/8 hover:bg-primary/15"
-						whileHover={reduced ? {} : { scale: 1.04 }}
-						whileTap={reduced ? {} : { scale: 0.96 }}
-						transition={{ duration: 0.15, ease: easeOutExpo }}
-					>
-						<FolderPlus className="w-3.5 h-3.5" />
-						New
-					</motion.button>
-					<motion.button
-						type="button"
-						onClick={onOpenSession}
-						aria-label="Open folder as session"
-						title="Open a folder for the agent to work in"
-						className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-muted-foreground bg-muted hover:bg-muted/70 hover:text-foreground transition-colors"
-						whileHover={reduced ? {} : { scale: 1.04 }}
-						whileTap={reduced ? {} : { scale: 0.96 }}
-						transition={{ duration: 0.15, ease: easeOutExpo }}
-					>
-						<FolderOpen className="w-3.5 h-3.5" />
-						Open
-					</motion.button>
-				</div>
+			{/* ── Actions (V3: white bordered cards) ── */}
+			<div className="flex items-center gap-2 px-3 pb-4 pt-1">
+				<motion.button
+					type="button"
+					onClick={onNewSession}
+					aria-label="New session"
+					title="New session in your Hypatia Cowork folder"
+					className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-card py-2.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:border-foreground"
+					whileTap={reduced ? {} : { scale: 0.98 }}
+					transition={{ duration: 0.15, ease: easeOutExpo }}
+				>
+					<FolderPlus className="w-4 h-4" />
+					New session
+				</motion.button>
+				<motion.button
+					type="button"
+					onClick={onOpenSession}
+					aria-label="Open folder as session"
+					title="Open a folder for the agent to work in"
+					className="flex items-center justify-center rounded-xl border border-border bg-card p-2.5 text-muted-foreground shadow-sm transition-colors hover:border-foreground hover:text-foreground"
+					whileTap={reduced ? {} : { scale: 0.96 }}
+					transition={{ duration: 0.15, ease: easeOutExpo }}
+				>
+					<FolderOpen className="w-4 h-4" />
+				</motion.button>
 			</div>
 
-			{/* ── Search ── */}
-			<div className="px-3 pb-2">
+			{/* ── Search (V3: white rounded-xl) ── */}
+			<div className="px-3 pb-4">
 				<motion.div
-					className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 border transition-colors duration-200 ${
-						focused ? "border-primary/50 bg-primary/4" : "border-border bg-muted/50"
+					className={`flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 border bg-card transition-colors duration-200 ${
+						focused ? "border-foreground/60" : "border-border"
 					}`}
 					transition={{ duration: 0.18, ease: easeOutExpo }}
 				>
 					<Search
-						className={`w-3 h-3 shrink-0 ${
-							focused ? "text-primary/70" : "text-muted-foreground/40"
+						className={`w-3.5 h-3.5 shrink-0 ${
+							focused ? "text-foreground/70" : "text-muted-foreground/40"
 						}`}
 					/>
 					<input
@@ -364,8 +356,13 @@ export function ConversationSearch({
 				</motion.div>
 			</div>
 
+			{/* ── Count label (V3 mono) ── */}
+			<div className="px-4 pb-2 font-mono text-[10px] uppercase tracking-[0.25em] text-muted-foreground/70">
+				Sessions · {sessions.length}
+			</div>
+
 			{/* ── Session list ── */}
-			<div ref={scrollRef} className="flex-1 overflow-y-auto px-2 pb-2 space-y-px">
+			<div ref={scrollRef} className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
 				{/* Empty state — AnimatePresence only here so it fades in/out */}
 				<AnimatePresence>
 					{filtered.length === 0 && (
@@ -515,16 +512,18 @@ function SessionRow({
 			}}
 			// Single background lives on the container so the content row and the
 			// action row read as ONE surface (no double-tint seam on hover).
-			className={`relative rounded-lg transition-colors ${
-				isActive ? "bg-sidebar-accent" : hovered ? "bg-accent/50" : ""
+			// V3: active row is a white card with hairline border + soft shadow.
+			className={`relative rounded-xl transition-colors ${
+				isActive ? "bg-sidebar-accent border border-border shadow-sm" : hovered ? "bg-card/70" : ""
 			}`}
 		>
-			{/* Active accent bar */}
+			{/* Active accent rail — V3 gold→blue gradient */}
 			<AnimatePresence>
 				{isActive && (
 					<motion.div
 						layoutId="active-bar"
-						className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-primary"
+						className="absolute -left-px top-2.5 bottom-2.5 w-[2px] rounded-full"
+						style={{ background: "linear-gradient(to bottom, #e8a821, #0051a5)" }}
 						initial={{ scaleY: 0, opacity: 0 }}
 						animate={{ scaleY: 1, opacity: 1 }}
 						exit={{ scaleY: 0, opacity: 0 }}
@@ -540,7 +539,7 @@ function SessionRow({
 					type="button"
 					onClick={() => onSelect(session.id)}
 					onDoubleClick={() => onRequestRename?.(session.id)}
-					className={`w-full text-left pl-4 pr-3 pt-2.5 pb-1.5 rounded-t-lg ${
+					className={`w-full text-left pl-4 pr-3 pt-3 pb-1.5 rounded-t-xl ${
 						isActive ? "bg-sidebar-accent" : ""
 					}`}
 					whileTap={reduced ? {} : { scale: 0.985 }}
@@ -548,7 +547,7 @@ function SessionRow({
 				>
 					{/* Title */}
 					<span
-						className={`flex items-center gap-1 text-[12px] truncate leading-snug ${isActive ? "font-semibold text-foreground" : "font-medium text-foreground/80"}`}
+						className={`flex items-center gap-1 text-[13px] truncate leading-snug ${isActive ? "font-medium text-foreground" : "font-medium text-foreground/70"}`}
 					>
 						{session.pinned && (
 							<Pin className="w-2.5 h-2.5 shrink-0 text-primary/70" fill="currentColor" />
@@ -569,11 +568,11 @@ function SessionRow({
 					)}
 
 					{/* Last message / search snippet + timestamp */}
-					<span className="flex items-center gap-1.5 mt-0.5">
-						<span className="text-[11px] truncate flex-1 text-muted-foreground/55">
+					<span className="flex items-center gap-1.5 mt-1">
+						<span className="text-[11px] font-light truncate flex-1 text-muted-foreground/60">
 							{snippet || session.lastMessage}
 						</span>
-						<span className="text-[10px] shrink-0 tabular-nums text-muted-foreground/35">
+						<span className="font-mono text-[10px] shrink-0 tabular-nums text-muted-foreground/45">
 							{formatTime(session.timestamp)}
 						</span>
 					</span>

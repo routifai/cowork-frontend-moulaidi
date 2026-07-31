@@ -97,11 +97,11 @@
 	--success-subtle: 142 60% 40% / 0.06;
 	--error-subtle: 0 72% 52% / 0.06;
 
-	/* ── Sidebar (V3: stone) ── */
+	/* ── Sidebar (V3: stone; active row = white card) ── */
 	--sidebar-background: 0 0% 98%;
 	--sidebar-foreground: 240 7% 10%;
-	--sidebar-accent: 240 5% 93%;
-	--sidebar-accent-foreground: 240 7% 12%;
+	--sidebar-accent: 0 0% 100%;
+	--sidebar-accent-foreground: 240 7% 6%;
 	--sidebar-border: 240 5% 91%;
 }
 

@@ -63,6 +63,17 @@ export function Sidebar({
 			animate={{ x: 0, opacity: 1 }}
 			transition={{ duration: 0.32, ease: easeOutExpo }}
 		>
+			{/* ── Brand header (V3) ── */}
+			<div className="flex items-center justify-between px-4 pt-5 pb-3 shrink-0">
+				<div className="flex items-center gap-2.5">
+					<span className="h-[18px] w-[18px] rounded-full bg-foreground" aria-hidden="true" />
+					<span className="text-[15px] font-semibold tracking-tight text-foreground">Hypatia</span>
+				</div>
+				<span className="font-mono text-[9px] uppercase tracking-[0.25em] text-muted-foreground/70">
+					Cowork
+				</span>
+			</div>
+
 			{/* ── Sessions ── */}
 			<div className="flex-1 min-h-0 relative overflow-hidden">
 				<ConversationSearch
