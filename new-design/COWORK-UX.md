@@ -51,6 +51,8 @@ Sidebar (stone, fixed)
 ├── Artifacts       (library across projects — see artifacts-v3.html)
 ├── Scheduled
 ├── Customize
+├── Connectors      (always-visible status list: Email ● CONNECTED,
+│                    Web search ● CONNECTED, + Add connector)
 ├── Recent tasks    (live runs show a pulsing blue dot)
 └── User footer
 
@@ -85,7 +87,9 @@ rail (the folder).
 ### 5.1 Header
 - Back to hub, project name in serif.
 - **Context chips**, always visible, mono: folder path · Instructions ·
-  N memories. These are the Cowork project wrapper surfaced as UI.
+  N memories · N connectors (green plug icon when live — tells the user this
+  session can reach email / the web before they ask it to). These are the
+  Cowork project wrapper + connector controls surfaced as UI.
 - Engine pill right: `READY` (green) → `PLANNING` / `WORKING` (blue, pulsing).
 
 ### 5.2 Task feed (main column)
@@ -166,6 +170,7 @@ Ordered cards, not bubbles:
 | File tree + badges | Tauri fs plugin listing of session cwd; badge events from tool calls (read/edit/write paths) |
 | Artifacts rail | `usePlaygroundArtifacts` |
 | Modes | map to the sidecar's permission modes; default Auto |
+| Connectors list | sidecar extension/tool registry (email, web search) — connected = tool available this session |
 
 ## 8. Open questions (decide before build)
 
