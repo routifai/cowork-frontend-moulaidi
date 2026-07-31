@@ -16,6 +16,9 @@ Handoff package for integrating the V3 design language into the Hypatia frontend
 | `reference/chat-v3.html` | Working prototype: chat with Pulse avatar full choreography. **Primary reference for chat integration.** |
 | `reference/orb-ideas.html` | Orb material studies (6 skins). Context for why Royal Gloss won. |
 | `reference/presence-shapes.html` | Form studies (8 shapes). Context for why Pulse won for chat. |
+| `reference/artifacts-v3.html` | Artifacts library + slide-over viewer (Phase 6). |
+| `reference/cowork-v3.html` | Workspace-first UX (Cowork model): Projects hub + folder-bound session. Toggle "UX notes" for annotations. |
+| `COWORK-UX.md` | **Written spec** for the workspace UX — research findings, IA, screen specs, states, integration mapping. |
 
 ## Validated decisions (do not relitigate)
 

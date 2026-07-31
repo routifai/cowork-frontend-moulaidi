@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypatia V3 — Workspace (Cowork UX)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ink: '#0d0d0f', surface: '#ffffff', stone: '#fafafa',
+                        border: '#e7e7e9', accent: '#0051a5', gold: '#e8a821', success: '#10a37f'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        serif: ['Playfair Display', 'Georgia', 'serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    borderRadius: { panel: '22px' }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; overflow: hidden; background: #fbfbfc; color: #0d0d0f; }
+        .editorial-text { font-family: 'Playfair Display', serif; letter-spacing: -0.02em; }
+        .glass-panel {
+            background: rgba(255,255,255,0.62);
+            backdrop-filter: blur(28px) saturate(1.4);
+            -webkit-backdrop-filter: blur(28px) saturate(1.4);
+            border: 1px solid rgba(231,231,233,0.9);
+            box-shadow: 0 12px 40px rgba(13,13,15,0.05);
+        }
+        .subtle-shadow { box-shadow: 0 4px 20px rgba(13,13,15,0.04); }
+        ::-webkit-scrollbar { width: 0; }
+        input::placeholder, textarea::placeholder { color: #a3a3a8; font-weight: 300; }
+        .grain {
+            position: fixed; inset: 0; z-index: 90; pointer-events: none;
+            opacity: 0.035; mix-blend-mode: multiply;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+        .shimmer-text {
+            background: linear-gradient(90deg, #a3a3a8 30%, #0d0d0f 50%, #a3a3a8 70%);
+            background-size: 200% 100%;
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            animation: shimmer 1.8s linear infinite;
+        }
+        @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+        .project-card { transition: transform 0.3s cubic-bezier(0.2,0.8,0.2,1), box-shadow 0.3s, border-color 0.2s; }
+        .project-card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(13,13,15,0.08); border-color: #0d0d0f; }
+
+        /* UX annotation badges */
+        .ux-note { position: absolute; z-index: 70; display: none; }
+        body.show-notes .ux-note { display: flex; }
+        .ux-badge {
+            width: 20px; height: 20px; border-radius: 9999px; background: #e8a821; color: #0d0d0f;
+            font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 2px 8px rgba(232,168,33,0.5); cursor: default;
+        }
+        .ux-label {
+            margin-left: 8px; max-width: 240px; background: #0d0d0f; color: #fafafa;
+            font-size: 10.5px; font-weight: 300; line-height: 1.5; padding: 6px 10px;
+            border-radius: 8px; opacity: 0; transition: opacity 0.15s; pointer-events: none;
+        }
+        .ux-note:hover .ux-label { opacity: 1; }
+
+        .file-row:hover { background: rgba(255,255,255,0.9); }
+        @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+    </style>
+</head>
+<body>
+
+    <div class="grain"></div>
+
+    <!-- UX-notes toggle -->
+    <button id="notes-toggle" class="fixed bottom-5 right-5 z-[80] flex items-center space-x-2 text-[10px] font-mono uppercase tracking-[0.2em] text-gray-400 hover:text-ink border border-border rounded-lg px-3 py-2 bg-white/80 backdrop-blur transition">
+        <i data-lucide="sticky-note" class="w-3 h-3"></i><span>UX notes</span>
+    </button>
+
+    <div class="flex w-full h-screen">
+
+        <!-- ============================================= -->
+        <!-- SIDEBAR — mirrors Cowork nav in V3 skin       -->
+        <!-- ============================================= -->
+        <div class="w-64 bg-stone/90 backdrop-blur border-r border-border h-full flex flex-col pt-7 pb-5 px-4 z-30 shrink-0 relative">
+            <div class="ux-note" style="top: 120px; right: -10px;"><span class="ux-badge">1</span><span class="ux-label">Cowork's nav, one-to-one: New, Projects, Artifacts, Scheduled, Customize. Chat is gone as the top-level idea — the workspace is.</span></div>
+
+            <div class="flex items-center justify-between px-2 mb-8">
+                <div class="flex items-center space-x-3">
+                    <div class="w-5 h-5 bg-ink rounded-full"></div>
+                    <span class="font-semibold text-base tracking-tight">Hypatia</span>
+                </div>
+                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Cowork</span>
+            </div>
+
+            <button class="w-full bg-surface border border-border hover:border-ink text-ink rounded-xl py-2.5 flex items-center justify-center space-x-2 transition subtle-shadow mb-6">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span class="font-medium text-sm">New task</span>
+            </button>
+
+            <nav class="space-y-1 mb-6">
+                <a href="#" data-nav="projects" class="nav-item flex items-center space-x-3 px-3 py-2 bg-white rounded-lg shadow-sm border border-border text-ink font-medium text-sm">
+                    <i data-lucide="folder-kanban" class="w-4 h-4"></i><span>Projects</span>
+                    <span class="ml-auto text-[10px] font-mono text-gray-400">3</span>
+                </a>
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-500 hover:text-ink transition text-sm font-medium rounded-lg hover:bg-white">
+                    <i data-lucide="layers" class="w-4 h-4"></i><span>Artifacts</span>
+                    <span class="ml-auto text-[10px] font-mono text-gray-400">8</span>
+                </a>
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-500 hover:text-ink transition text-sm font-medium rounded-lg hover:bg-white">
+                    <i data-lucide="clock" class="w-4 h-4"></i><span>Scheduled</span>
+                    <span class="ml-auto text-[10px] font-mono text-gray-400">2</span>
+                </a>
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-500 hover:text-ink transition text-sm font-medium rounded-lg hover:bg-white">
+                    <i data-lucide="sliders-horizontal" class="w-4 h-4"></i><span>Customize</span>
+                </a>
+            </nav>
+
+            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] px-2 mb-3">Recent tasks</div>
+            <div class="flex-1 overflow-y-auto space-y-0.5">
+                <div class="px-3 py-2 rounded-lg hover:bg-white cursor-pointer transition flex items-center space-x-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shrink-0"></span>
+                    <span class="text-[13px] text-ink font-medium truncate">Organize Q3 client files</span>
+                </div>
+                <div class="px-3 py-2 rounded-lg hover:bg-white cursor-pointer transition text-[13px] text-gray-500 truncate">Build RBC landing page</div>
+                <div class="px-3 py-2 rounded-lg hover:bg-white cursor-pointer transition text-[13px] text-gray-500 truncate">Summarize meeting notes</div>
+                <div class="px-3 py-2 rounded-lg hover:bg-white cursor-pointer transition text-[13px] text-gray-500 truncate">Rename screenshot archive</div>
+                <div class="px-3 py-2 rounded-lg hover:bg-white cursor-pointer transition text-[13px] text-gray-500 truncate">Expense sheet from receipts</div>
+            </div>
+
+            <div class="mt-auto pt-5 flex items-center space-x-3 px-3">
+                <div class="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium text-[11px]">SM</div>
+                <div class="text-sm font-medium text-ink truncate">Simo M.</div>
+            </div>
+        </div>
+
+        <!-- ============================================= -->
+        <!-- SCREEN A · PROJECTS HUB                       -->
+        <!-- ============================================= -->
+        <div id="hub" class="flex-1 flex flex-col h-full min-w-0 relative">
+            <div class="ux-note" style="top: 200px; left: 40%;"><span class="ux-badge">2</span><span class="ux-label">Cowork Projects = folder-bound workspaces carrying files, instructions and memory across sessions. Cards lead with the FOLDER, not the conversation.</span></div>
+
+            <div class="flex items-end justify-between px-12 pt-10 pb-8">
+                <div>
+                    <div class="flex items-center space-x-3 mb-3">
+                        <span class="w-1.5 h-1.5 rounded-full bg-gold animate-pulse"></span>
+                        <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.3em]">Folder-bound workspaces · context persists</span>
+                    </div>
+                    <h1 class="editorial-text text-5xl text-ink">Projects.</h1>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button class="text-xs font-medium text-gray-500 hover:text-ink border border-border rounded-xl px-4 py-2.5 bg-white transition">Sort · Last active</button>
+                    <button class="bg-ink hover:bg-gray-800 text-white text-sm font-medium rounded-xl px-5 py-2.5 transition flex items-center space-x-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i><span>New project</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto px-12 pb-12">
+                <div class="grid grid-cols-3 gap-5">
+
+                    <button class="project-card open-workspace text-left bg-surface border border-border rounded-panel p-6 cursor-pointer">
+                        <div class="flex items-start justify-between mb-8">
+                            <div class="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center">
+                                <i data-lucide="landmark" class="w-5 h-5 text-accent"></i>
+                            </div>
+                            <span class="flex items-center space-x-1.5 text-[10px] font-mono text-accent"><span class="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></span><span>1 RUNNING</span></span>
+                        </div>
+                        <div class="text-base font-semibold text-ink mb-1">RBC client portal</div>
+                        <div class="text-[11px] font-mono text-gray-400 truncate mb-5">~/Cowork/rbc-portal · 128 files</div>
+                        <div class="space-y-1.5 text-[11px] text-gray-500 font-light">
+                            <div class="flex items-center space-x-2"><i data-lucide="book-open" class="w-3 h-3 text-gray-300"></i><span>Instructions: bank-grade tone, RBC tokens</span></div>
+                            <div class="flex items-center space-x-2"><i data-lucide="brain" class="w-3 h-3 text-gray-300"></i><span>Memory: 14 facts retained</span></div>
+                        </div>
+                        <div class="flex items-center justify-between mt-5 pt-4 border-t border-border/60">
+                            <span class="text-[10px] font-mono text-gray-400">4 artifacts</span>
+                            <span class="text-[10px] font-mono text-gray-400">Active now</span>
+                        </div>
+                    </button>
+
+                    <button class="project-card text-left bg-surface border border-border rounded-panel p-6 cursor-pointer">
+                        <div class="flex items-start justify-between mb-8">
+                            <div class="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center">
+                                <i data-lucide="line-chart" class="w-5 h-5 text-gold"></i>
+                            </div>
+                        </div>
+                        <div class="text-base font-semibold text-ink mb-1">Q3 earnings prep</div>
+                        <div class="text-[11px] font-mono text-gray-400 truncate mb-5">~/Cowork/q3-earnings · 41 files</div>
+                        <div class="space-y-1.5 text-[11px] text-gray-500 font-light">
+                            <div class="flex items-center space-x-2"><i data-lucide="book-open" class="w-3 h-3 text-gray-300"></i><span>Instructions: cite transcript pages</span></div>
+                            <div class="flex items-center space-x-2"><i data-lucide="brain" class="w-3 h-3 text-gray-300"></i><span>Memory: 6 facts retained</span></div>
+                        </div>
+                        <div class="flex items-center justify-between mt-5 pt-4 border-t border-border/60">
+                            <span class="text-[10px] font-mono text-gray-400">3 artifacts</span>
+                            <span class="text-[10px] font-mono text-gray-400">Jul 28</span>
+                        </div>
+                    </button>
+
+                    <button class="project-card text-left bg-surface border border-border rounded-panel p-6 cursor-pointer">
+                        <div class="flex items-start justify-between mb-8">
+                            <div class="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center">
+                                <i data-lucide="users" class="w-5 h-5 text-success"></i>
+                            </div>
+                        </div>
+                        <div class="text-base font-semibold text-ink mb-1">Client onboarding</div>
+                        <div class="text-[11px] font-mono text-gray-400 truncate mb-5">~/Cowork/onboarding · 17 files</div>
+                        <div class="space-y-1.5 text-[11px] text-gray-500 font-light">
+                            <div class="flex items-center space-x-2"><i data-lucide="book-open" class="w-3 h-3 text-gray-300"></i><span>Instructions: use email templates v2</span></div>
+                            <div class="flex items-center space-x-2"><i data-lucide="brain" class="w-3 h-3 text-gray-300"></i><span>Memory: 3 facts retained</span></div>
+                        </div>
+                        <div class="flex items-center justify-between mt-5 pt-4 border-t border-border/60">
+                            <span class="text-[10px] font-mono text-gray-400">1 artifact</span>
+                            <span class="text-[10px] font-mono text-gray-400">Jul 24</span>
+                        </div>
+                    </button>
+
+                    <!-- New project ghost card -->
+                    <button class="text-left border-2 border-dashed border-border rounded-panel p-6 cursor-pointer hover:border-ink transition flex flex-col items-center justify-center min-h-[230px] text-gray-400 hover:text-ink">
+                        <i data-lucide="folder-plus" class="w-6 h-6 mb-3"></i>
+                        <span class="text-sm font-medium">Bind a folder</span>
+                        <span class="text-[11px] font-light mt-1">Hypatia works inside it</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================= -->
+        <!-- SCREEN B · WORKSPACE SESSION                  -->
+        <!-- ============================================= -->
+        <div id="workspace" class="flex-1 h-full min-w-0 relative hidden flex-col">
+
+            <!-- Header -->
+            <div class="flex items-center justify-between px-10 py-4 border-b border-border bg-white/70 backdrop-blur-md z-10 relative">
+                <div class="ux-note" style="top: 54px; left: 220px;"><span class="ux-badge">3</span><span class="ux-label">The folder IS the session context — injected up front and always visible. Instructions + memory ride along (Cowork's project wrapper).</span></div>
+                <div class="flex items-center space-x-4 min-w-0">
+                    <button id="back-btn" class="p-2 text-gray-400 hover:text-ink transition rounded-lg hover:bg-stone shrink-0"><i data-lucide="arrow-left" class="w-4 h-4"></i></button>
+                    <div class="min-w-0">
+                        <h1 class="editorial-text text-xl text-ink truncate">RBC client portal</h1>
+                        <div class="flex items-center space-x-3 mt-1">
+                            <span class="flex items-center space-x-1.5 text-[10px] font-mono text-gray-500 bg-stone border border-border rounded-md px-2 py-0.5"><i data-lucide="folder" class="w-3 h-3"></i><span>~/Cowork/rbc-portal</span></span>
+                            <span class="flex items-center space-x-1.5 text-[10px] font-mono text-gray-500 bg-stone border border-border rounded-md px-2 py-0.5"><i data-lucide="book-open" class="w-3 h-3"></i><span>Instructions</span></span>
+                            <span class="flex items-center space-x-1.5 text-[10px] font-mono text-gray-500 bg-stone border border-border rounded-md px-2 py-0.5"><i data-lucide="brain" class="w-3 h-3"></i><span>14 memories</span></span>
+                        </div>
+                    </div>
+                </div>
+                <div id="engine-pill" class="flex items-center space-x-1.5 text-[11px] font-mono text-success bg-stone border border-border rounded-lg px-3 py-2 shrink-0">
+                    <div class="w-1.5 h-1.5 bg-success rounded-full"></div><span>READY</span>
+                </div>
+            </div>
+
+            <div class="flex-1 flex min-h-0">
+
+                <!-- Main column: task thread -->
+                <div class="flex-1 flex flex-col min-w-0">
+                    <div id="thread" class="flex-1 overflow-y-auto min-h-0">
+                        <div class="max-w-2xl mx-auto px-8 py-8 space-y-6" id="feed">
+
+                            <!-- Context injection notice -->
+                            <div class="flex items-center space-x-3 text-[11px] text-gray-400 font-light relative">
+                                <div class="h-px flex-1 bg-border"></div>
+                                <span class="font-mono uppercase tracking-[0.2em]">Workspace injected · 128 files · 4.2 MB indexed</span>
+                                <div class="h-px flex-1 bg-border"></div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <!-- Composer -->
+                    <div class="px-8 pb-6 pt-2 relative">
+                        <div class="ux-note" style="top: -8px; left: 60px;"><span class="ux-badge">4</span><span class="ux-label">Cowork's permission modes, made visible where you type: Manual (approve each step), Auto (self-review), Skip. Mode is a first-class control, not a setting.</span></div>
+                        <div class="max-w-2xl mx-auto">
+                            <div class="glass-panel rounded-panel p-3">
+                                <textarea id="task-input" rows="2" class="w-full px-4 pt-3 pb-2 text-[15px] text-ink focus:outline-none resize-none bg-transparent font-light" placeholder="Describe the outcome. Hypatia plans first, then works the folder.">Organize the client files by quarter, then draft the Q3 summary deck from what's in /reports.</textarea>
+                                <div class="flex items-center justify-between px-2 pb-1 pt-2.5" style="border-top: 1px solid rgba(13,13,15,0.06)">
+                                    <div class="flex items-center space-x-1.5">
+                                        <button class="mode-pill text-[10px] font-mono uppercase tracking-[0.15em] px-2.5 py-1.5 rounded-lg border transition" data-mode="manual">Manual</button>
+                                        <button class="mode-pill active text-[10px] font-mono uppercase tracking-[0.15em] px-2.5 py-1.5 rounded-lg border transition" data-mode="auto">Auto</button>
+                                        <button class="mode-pill text-[10px] font-mono uppercase tracking-[0.15em] px-2.5 py-1.5 rounded-lg border transition" data-mode="skip">Skip</button>
+                                    </div>
+                                    <div class="flex items-center space-x-3">
+                                        <canvas id="pulse-mini" width="56" height="56" class="w-7 h-7"></canvas>
+                                        <button id="run-btn" class="p-2 bg-ink text-white rounded-lg hover:bg-gray-800 transition shadow-sm">
+                                            <i data-lucide="arrow-up" class="w-4 h-4"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-center text-[10px] font-mono text-gray-300 uppercase tracking-[0.25em] mt-3">Runs continue in background · outputs land in the folder</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right rail: the workspace itself -->
+                <div class="w-80 border-l border-border bg-stone/60 backdrop-blur h-full flex flex-col shrink-0 relative">
+                    <div class="ux-note" style="top: 100px; left: -10px;"><span class="ux-badge">5</span><span class="ux-label">The folder rides shotgun the whole session — live file tree with per-file read/edit badges, artifacts pinned below. Cowork shows outputs landing in the mounted folder; we show them landing live.</span></div>
+
+                    <div class="px-5 pt-5 pb-3 flex items-center justify-between">
+                        <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Workspace</span>
+                        <span class="text-[10px] font-mono text-gray-400">128 files</span>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto px-3 pb-3 text-[12.5px]" id="file-tree">
+                        <div class="file-row flex items-center space-x-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-gray-600"><i data-lucide="folder" class="w-3.5 h-3.5 text-gray-400"></i><span class="font-medium">clients/</span><span class="ml-auto text-[9px] font-mono text-gray-300">62</span></div>
+                        <div class="file-row flex items-center space-x-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-gray-600"><i data-lucide="folder" class="w-3.5 h-3.5 text-gray-400"></i><span class="font-medium">reports/</span><span class="ml-auto text-[9px] font-mono text-gray-300">38</span></div>
+                        <div class="pl-5">
+                            <div class="file-row flex items-center space-x-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-gray-500" data-file="q3-actuals"><i data-lucide="file-text" class="w-3.5 h-3.5 text-gray-300"></i><span>q3-actuals.xlsx</span><span class="file-badge ml-auto"></span></div>
+                            <div class="file-row flex items-center space-x-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-gray-500" data-file="q3-transcript"><i data-lucide="file-text" class="w-3.5 h-3.5 text-gray-300"></i><span>q3-transcript.pdf</span><span class="file-badge ml-auto"></span></div>
+                            <div class="file-row flex items-center space-x-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-gray-500" data-file="fee-schedule"><i data-lucide="file-text" class="w-3.5 h-3.5 text-gray-300"></i><span>fee-schedule.docx</span><span class="file-badge ml-auto"></span></div>
+                        </div>
+                        <div class="file-row flex items-center space-x-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-gray-600"><i data-lucide="folder" class="w-3.5 h-3.5 text-gray-400"></i><span class="font-medium">assets/</span><span class="ml-auto text-[9px] font-mono text-gray-300">21</span></div>
+                        <div class="file-row flex items-center space-x-2 px-2.5 py-1.5 rounded-lg cursor-pointer text-gray-500"><i data-lucide="file-code-2" class="w-3.5 h-3.5 text-gray-300"></i><span>INSTRUCTIONS.md</span></div>
+                    </div>
+
+                    <div class="border-t border-border px-5 pt-4 pb-3 flex items-center justify-between">
+                        <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Artifacts this run</span>
+                    </div>
+                    <div id="run-artifacts" class="px-3 pb-5 space-y-1.5 min-h-[76px]">
+                        <div class="text-[11px] text-gray-300 font-light px-2.5" id="artifacts-empty">Nothing yet — outputs land here and in the folder.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+lucide.createIcons();
+
+// ---------------------------------------------------------------------
+// Navigation: hub ⇄ workspace
+// ---------------------------------------------------------------------
+const hub = document.getElementById('hub');
+const workspace = document.getElementById('workspace');
+
+document.querySelectorAll('.open-workspace').forEach(el => el.addEventListener('click', () => {
+    hub.classList.add('hidden');
+    workspace.classList.remove('hidden');
+    workspace.classList.add('flex');
+    gsap.from('#workspace > *', { opacity: 0, y: 14, duration: 0.6, stagger: 0.08, ease: 'power3.out' });
+}));
+document.getElementById('back-btn').addEventListener('click', () => {
+    workspace.classList.add('hidden');
+    workspace.classList.remove('flex');
+    hub.classList.remove('hidden');
+    gsap.from('#hub > *', { opacity: 0, y: 14, duration: 0.5, stagger: 0.06, ease: 'power3.out' });
+});
+
+// UX notes toggle
+document.getElementById('notes-toggle').addEventListener('click', () => {
+    document.body.classList.toggle('show-notes');
+});
+
+// Permission mode pills
+function styleMode(p, active) {
+    p.style.background = active ? '#0d0d0f' : 'white';
+    p.style.color = active ? 'white' : '#a1a1aa';
+    p.style.borderColor = active ? '#0d0d0f' : '#e7e7e9';
+}
+document.querySelectorAll('.mode-pill').forEach(p => {
+    styleMode(p, p.classList.contains('active'));
+    p.addEventListener('click', () => {
+        document.querySelectorAll('.mode-pill').forEach(x => { x.classList.remove('active'); styleMode(x, false); });
+        p.classList.add('active');
+        styleMode(p, true);
+    });
+});
+
+// ---------------------------------------------------------------------
+// Mini Pulse (2D canvas — the presence, lightweight)
+// ---------------------------------------------------------------------
+const pulseState = { chaos: 0.15, speed: 1.0 };
+const pc = document.getElementById('pulse-mini');
+const pctx = pc.getContext('2d');
+(function drawPulse() {
+    requestAnimationFrame(drawPulse);
+    const t = performance.now() / 1000;
+    const { chaos, speed } = pulseState;
+    pctx.clearRect(0, 0, 56, 56);
+    const cx = 28, cy = 28, r0 = 14, bars = 48;
+    for (let i = 0; i < bars; i++) {
+        const a = (i / bars) * Math.PI * 2 + t * 0.15;
+        const wave = Math.sin(a * 3 + t * speed * 2) * 0.5 + 0.5;
+        const jitter = Math.abs(Math.sin(a * 17 + t * speed * 7)) * chaos;
+        const h = 2 + wave * 4 + jitter * 14;
+        pctx.strokeStyle = i % 16 === 0 ? '#e8a821' : (i % 2 === 0 ? '#0051a5' : '#1a66ff');
+        pctx.lineWidth = 1.1;
+        pctx.beginPath();
+        pctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+        pctx.lineTo(cx + Math.cos(a) * (r0 + h), cy + Math.sin(a) * (r0 + h));
+        pctx.stroke();
+    }
+})();
+
+// ---------------------------------------------------------------------
+// SCRIPTED RUN — the Cowork loop: plan → approve → work → checkpoint →
+// deliver. All mock; timings mimic the real cadence.
+// ---------------------------------------------------------------------
+const feed = document.getElementById('feed');
+const thread = document.getElementById('thread');
+const enginePill = document.getElementById('engine-pill');
+let running = false;
+
+function scrollDown() { thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' }); }
+function el(html) { const d = document.createElement('div'); d.innerHTML = html.trim(); return d.firstChild; }
+function addToFeed(node) {
+    feed.appendChild(node);
+    lucide.createIcons();
+    gsap.from(node, { opacity: 0, y: 16, duration: 0.5, ease: 'power3.out' });
+    scrollDown();
+}
+function fileBadge(name, kind) {
+    const row = document.querySelector(`[data-file="${name}"] .file-badge`);
+    if (!row) return;
+    const map = { read: ['READ', '#71717a'], edit: ['EDIT', '#0051a5'], new: ['NEW', '#10a37f'] };
+    const [label, color] = map[kind];
+    row.innerHTML = `<span class="text-[8px] font-mono px-1.5 py-0.5 rounded" style="color:${color}; background:${color}14">${label}</span>`;
+}
+
+document.getElementById('run-btn').addEventListener('click', () => {
+    if (running) return;
+    running = true;
+    const text = document.getElementById('task-input').value.trim();
+    document.getElementById('task-input').value = '';
+
+    enginePill.innerHTML = '<div class="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></div><span class="text-accent">PLANNING</span>';
+    pulseState.chaos = 0.6; pulseState.speed = 3;
+
+    // 1 · User task
+    addToFeed(el(`
+        <div class="flex flex-col items-end">
+            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] mb-2 pr-1">You · Task</div>
+            <div class="glass-panel rounded-panel rounded-tr-md px-6 py-4 max-w-xl">
+                <p class="text-[15px] leading-relaxed">${text}</p>
+            </div>
+        </div>`));
+
+    // 2 · Plan review card (Cowork: review the approach, then let it run)
+    setTimeout(() => {
+        const plan = el(`
+            <div class="relative">
+                <div class="ux-note" style="top: -10px; right: -10px;"><span class="ux-badge">6</span><span class="ux-label">Cowork's "review Claude's approach, then let it run" — the plan is a card you approve or edit, not a wall of text.</span></div>
+                <div class="flex items-center space-x-3 mb-3">
+                    <div class="w-7 h-7 rounded-full border border-border"></div>
+                    <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Hypatia · Proposed plan</span>
+                </div>
+                <div class="ml-10 bg-surface border border-border rounded-panel p-5 subtle-shadow">
+                    <div class="space-y-3">
+                        ${[
+                            ['Scan /clients and /reports', '100 files · read-only'],
+                            ['Reorganize client files into Q1–Q4 folders', '62 moves · no deletes'],
+                            ['Extract Q3 figures from reports', 'q3-actuals.xlsx + transcript'],
+                            ['Draft the summary deck', 'new artifact · ~10 slides'],
+                        ].map(([a, b], i) => `
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-3">
+                                <span class="w-5 h-5 rounded-full bg-stone border border-border flex items-center justify-center text-[9px] font-mono text-gray-500">${i + 1}</span>
+                                <span class="text-sm font-medium text-ink">${a}</span>
+                            </div>
+                            <span class="text-[10px] font-mono text-gray-400">${b}</span>
+                        </div>`).join('')}
+                    </div>
+                    <div class="flex items-center justify-between mt-5 pt-4 border-t border-border/60">
+                        <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.2em]">Mode: Auto · self-reviews before edits</span>
+                        <div class="flex items-center space-x-2">
+                            <button class="text-xs font-medium text-gray-500 hover:text-ink px-3 py-2 rounded-lg border border-border bg-white transition">Edit plan</button>
+                            <button id="approve-btn" class="text-xs font-medium text-white bg-ink hover:bg-gray-800 px-4 py-2 rounded-lg transition">Approve & run</button>
+                        </div>
+                    </div>
+                </div>
+            </div>`);
+        addToFeed(plan);
+        document.getElementById('approve-btn').addEventListener('click', () => startRun(plan));
+    }, 1100);
+});
+
+function startRun(planCard) {
+    planCard.querySelector('#approve-btn').outerHTML = '<span class="text-[10px] font-mono text-success uppercase tracking-[0.2em]">✓ Approved</span>';
+    enginePill.innerHTML = '<div class="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></div><span class="text-accent">WORKING</span>';
+
+    // Progress card with live steps
+    const prog = el(`
+        <div>
+            <div class="flex items-center space-x-3 mb-3">
+                <div class="w-7 h-7 rounded-full border border-border"></div>
+                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Hypatia · Working the folder</span>
+            </div>
+            <div class="ml-10 bg-surface border border-border rounded-panel p-5 subtle-shadow space-y-3" id="prog-steps"></div>
+        </div>`);
+    addToFeed(prog);
+    const stepsEl = prog.querySelector('#prog-steps');
+
+    const STEPS = [
+        { label: 'Scanning workspace', detail: '100 files read', files: [['q3-actuals', 'read'], ['q3-transcript', 'read'], ['fee-schedule', 'read']] },
+        { label: 'Reorganizing client files', detail: '62 files → Q1–Q4/', checkpoint: true },
+        { label: 'Extracting Q3 figures', detail: '38 data points · 2 sheets', files: [['q3-actuals', 'edit']] },
+        { label: 'Drafting summary deck', detail: 'q3-summary.pptx · 10 slides', artifact: true },
+    ];
+
+    let idx = 0;
+    function nextStep() {
+        if (idx > 0) {
+            const prev = stepsEl.children[idx - 1];
+            prev.querySelector('.step-icon').outerHTML = '<i data-lucide="check" class="w-4 h-4 text-success step-icon"></i>';
+            prev.querySelector('.step-label').classList.remove('shimmer-text');
+        }
+        if (idx >= STEPS.length) return finishRun();
+
+        const s = STEPS[idx];
+        stepsEl.appendChild(el(`
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <i data-lucide="loader-2" class="w-4 h-4 animate-spin text-accent step-icon"></i>
+                    <span class="text-sm font-medium step-label shimmer-text">${s.label}</span>
+                </div>
+                <span class="text-[10px] font-mono text-gray-400">${s.detail}</span>
+            </div>`));
+        lucide.createIcons();
+        scrollDown();
+        (s.files || []).forEach(([f, k], j) => setTimeout(() => fileBadge(f, k), 400 + j * 350));
+
+        idx++;
+        if (s.checkpoint) {
+            setTimeout(showCheckpoint, 1600);
+        } else {
+            setTimeout(nextStep, 2100);
+        }
+    }
+
+    // Checkpoint: destructive-ish op needs a yes (Cowork permission gate)
+    function showCheckpoint() {
+        const cp = el(`
+            <div class="relative">
+                <div class="ux-note" style="top: -10px; right: -10px;"><span class="ux-badge">7</span><span class="ux-label">Cowork pauses before consequential file ops and shows the affected list. Gold border = the one moment that demands your eyes.</span></div>
+                <div class="ml-10 rounded-panel p-5 subtle-shadow border-2" style="border-color: #e8a821; background: #fffdf5;">
+                    <div class="flex items-center space-x-2 mb-3">
+                        <i data-lucide="hand" class="w-4 h-4 text-gold"></i>
+                        <span class="text-[10px] font-mono text-gray-500 uppercase tracking-[0.25em]">Checkpoint · needs your call</span>
+                    </div>
+                    <p class="text-sm text-ink font-medium mb-1">Move 62 files into quarter folders?</p>
+                    <p class="text-[12px] text-gray-500 font-light mb-4">Creates Q1/–Q4/ under /clients. No deletions — originals move, nothing is removed. 3 files have ambiguous dates and will go to /review.</p>
+                    <div class="flex items-center space-x-2">
+                        <button class="cp-allow text-xs font-medium text-white bg-ink hover:bg-gray-800 px-4 py-2 rounded-lg transition">Allow</button>
+                        <button class="text-xs font-medium text-gray-500 hover:text-ink px-3 py-2 rounded-lg border border-border bg-white transition">Always allow moves</button>
+                        <button class="text-xs font-medium text-gray-500 hover:text-ink px-3 py-2 rounded-lg border border-border bg-white transition">Skip this step</button>
+                    </div>
+                </div>
+            </div>`);
+        addToFeed(cp);
+        pulseState.chaos = 0.05; pulseState.speed = 0.6; // presence holds its breath
+        cp.querySelector('.cp-allow').addEventListener('click', () => {
+            cp.querySelector('.cp-allow').outerHTML = '<span class="text-[10px] font-mono text-success uppercase tracking-[0.2em]">✓ Allowed</span>';
+            pulseState.chaos = 0.6; pulseState.speed = 3;
+            setTimeout(nextStep, 700);
+        });
+    }
+
+    function finishRun() {
+        // Artifact appears in the rail + folder
+        document.getElementById('artifacts-empty')?.remove();
+        const art = el(`
+            <button class="w-full text-left bg-white border border-border rounded-xl px-3 py-2.5 flex items-center space-x-2.5 hover:border-ink transition subtle-shadow">
+                <div class="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center shrink-0"><i data-lucide="presentation" class="w-3.5 h-3.5 text-orange-500"></i></div>
+                <div class="min-w-0">
+                    <div class="text-[12px] font-medium text-ink truncate">q3-summary.pptx</div>
+                    <div class="text-[9px] font-mono text-gray-400 uppercase tracking-[0.15em]">New · in /reports</div>
+                </div>
+            </button>`);
+        document.getElementById('run-artifacts').appendChild(art);
+        lucide.createIcons();
+        gsap.from(art, { opacity: 0, x: 16, duration: 0.5, ease: 'power3.out' });
+
+        // Completion summary + refinement affordance
+        addToFeed(el(`
+            <div class="relative">
+                <div class="ux-note" style="top: -10px; right: -10px;"><span class="ux-badge">8</span><span class="ux-label">Completion = receipt, not prose: what changed, where it landed, one-line next step. Refinement stays conversational ("the chart needs a legend").</span></div>
+                <div class="flex items-center space-x-3 mb-3">
+                    <div class="w-7 h-7 rounded-full border border-border"></div>
+                    <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Hypatia · Done in 4m 12s</span>
+                </div>
+                <div class="ml-10 space-y-3">
+                    <p class="text-[15px] font-light leading-relaxed text-ink max-w-xl">Workspace reorganized and the deck is drafted. 62 files now live under quarter folders, 3 ambiguous ones are waiting in /review, and <span class="font-medium">q3-summary.pptx</span> (10 slides) landed in /reports — figures pulled from the actuals, tone per your project instructions.</p>
+                    <div class="flex items-center space-x-4 text-[10px] font-mono text-gray-400 uppercase tracking-[0.2em]">
+                        <span class="text-success">✓ 62 moved</span><span>0 deleted</span><span class="text-accent">1 artifact</span><span class="text-gold">3 for review</span>
+                    </div>
+                </div>
+            </div>`));
+
+        enginePill.innerHTML = '<div class="w-1.5 h-1.5 bg-success rounded-full"></div><span>READY</span>';
+        pulseState.chaos = 0.15; pulseState.speed = 1;
+        running = false;
+    }
+
+    setTimeout(nextStep, 400);
+}
+</script>
+</body>
+</html>
