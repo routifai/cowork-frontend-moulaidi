@@ -68,15 +68,19 @@ feed inside a workspace session.
 
 - Serif display title ("Projects."), gold-dot mono kicker: "Folder-bound
   workspaces · context persists".
-- **Project card** (the core object). Leads with identity + folder, never
+- **Project card** (the core object). Leads with identity + folders, never
   with a message preview:
   - icon chip (per-domain color), project name (semibold)
-  - folder path + file count, mono: `~/Cowork/rbc-portal · 128 files`
+  - **folder list**, mono, primary folder shown + count if more:
+    `~/Cowork/rbc-portal +2 · 128 files` — a project binds N folders (client
+    docs, shared templates, output dir are commonly separate places)
   - instructions summary + memory count rows (book / brain icons)
   - footer: artifact count · last activity
   - live state: `● 1 RUNNING` mono chip, pulsing blue
-- **"Bind a folder"** ghost card (dashed border) is the create action — the
-  copy states the contract: *"Hypatia works inside it."*
+- **"Bind folders"** ghost card (dashed border) is the create action — the
+  copy states the contract: *"Hypatia works inside them."* Binding flow lets
+  you add folders one at a time (each with its own read/edit/delete grant),
+  not a single picker.
 - Sort control + New project (ink button).
 
 ## 5. Screen B — Workspace session
@@ -86,10 +90,13 @@ rail (the folder).
 
 ### 5.1 Header
 - Back to hub, project name in serif.
-- **Context chips**, always visible, mono: folder path · Instructions ·
-  N memories · N connectors (green plug icon when live — tells the user this
-  session can reach email / the web before they ask it to). These are the
-  Cowork project wrapper + connector controls surfaced as UI.
+- **Context chips**, always visible, mono: **folder chip becomes a dropdown**
+  when the project has more than one bound folder (e.g. `~/rbc-portal ▾`,
+  opening a short list with per-folder file counts and a "+ add folder"
+  row) · Instructions · N memories · N connectors (green plug icon when
+  live — tells the user this session can reach email / the web before they
+  ask it to). These are the Cowork project wrapper + connector controls
+  surfaced as UI.
 - Engine pill right: `READY` (green) → `PLANNING` / `WORKING` (blue, pulsing).
 
 ### 5.2 Task feed (main column)
@@ -129,16 +136,24 @@ Ordered cards, not bubbles:
 - Under-composer mono hint: `RUNS CONTINUE IN BACKGROUND · OUTPUTS LAND IN
   THE FOLDER`.
 
-### 5.4 Right rail — the living folder
-- `WORKSPACE · 128 FILES` mono header; scrollable file tree of the bound
-  folder (folders with counts, files with type icons).
+### 5.4 Right rail — the living workspace (multi-folder)
+- `WORKSPACE · 128 FILES` mono header; scrollable tree with **one top-level
+  root per bound folder**, each root labeled with its full path (mono,
+  truncated middle) and its own file count — not merged into one anonymous
+  tree. Roots are collapsible independently and remember their expand state
+  per project.
+- **Add folder** row pinned at the bottom of the tree (same affordance as the
+  hub's ghost card) — folders can be added to a project mid-session, not only
+  at creation.
 - **Live activity badges**: as the run touches files they pick up mono chips —
-  `READ` (gray), `EDIT` (blue), `NEW` (green) — appearing in real time. This
-  is the "watch Claude work" transparency made spatial instead of textual.
+  `READ` (gray), `EDIT` (blue), `NEW` (green) — appearing in real time,
+  regardless of which root the file lives under. This is the "watch Claude
+  work" transparency made spatial instead of textual.
 - **Artifacts this run** section pinned below: outputs appear here the moment
   they're written (icon chip, name, `NEW · in /reports`), clickable into the
-  artifact viewer (Phase 6). Empty state: *"Nothing yet — outputs land here
-  and in the folder."*
+  artifact viewer (Phase 6). Because a project can span folders, the artifact
+  row's meta line always names which root it landed in. Empty state:
+  *"Nothing yet — outputs land here and in the workspace."*
 
 ## 6. States & rules
 
@@ -156,29 +171,41 @@ Ordered cards, not bubbles:
 - Composer never locks during a run (steering/follow-up as in chat).
 - Destructive ops always checkpoint regardless of mode — Skip skips reviews,
   not consent for deletion (mirrors Cowork's delete confirmation).
+- A checkpoint touching files across more than one bound folder must name
+  each folder in its affected-list, not just "62 files" — cross-folder moves
+  are exactly the case a single-folder mental model hides.
 - Reduced motion: no shimmer, badges appear without animation, Pulse slows.
 
 ## 7. Integration mapping (this repo)
 
 | Spec element | Existing hook point |
 |---|---|
-| Project = folder binding | session `cwd` (already tracked per session) + folder-grouped sidebar |
+| Project = folder binding | a project stores an **array** of bound folders, not a single `cwd` — extend session/project state accordingly; existing folder-grouped sidebar becomes the "primary folder" grouping key |
 | Instructions chip | INSTRUCTIONS.md sidecar injection (already exists) |
 | Memory chip | project memory from `a51b4b4` (cross-session project memory) |
 | Plan / progress cards | tool-call stream (`usePiStream`) + ActivityBlock lineage |
 | Checkpoint card | extension ui.* permission gate (`useExtensionUi`) — restyle, don't rebuild |
-| File tree + badges | Tauri fs plugin listing of session cwd; badge events from tool calls (read/edit/write paths) |
+| File tree + badges | Tauri fs plugin listing, once per bound folder (one root each); badge events from tool calls (read/edit/write paths), matched to whichever root contains the path |
 | Artifacts rail | `usePlaygroundArtifacts` |
 | Modes | map to the sidecar's permission modes; default Auto |
 | Connectors list | sidecar extension/tool registry (email, web search) — connected = tool available this session |
 
-## 8. Open questions (decide before build)
+## 8. Decisions
 
-1. Do Recents fold into their project cards, or stay a flat global list?
-2. Multi-folder projects (Cowork issue #57177 asks for configurable base
-   path) — v1: one folder per project.
-3. File tree depth: full recursive vs. two levels + expand-on-demand
-   (concept shows two levels; prefer lazy expansion for 10k-file folders).
-4. Does approving a plan edit it into the task history (audit trail) — lean
-   yes: keep the approved plan card permanently in the feed as the receipt's
-   sibling.
+1. **Recents**: both places — flat "Recent tasks" in the sidebar for
+   cross-project overview, plus a recent badge on project cards.
+2. **Multi-folder projects: yes, from v1.** A project binds N folders, not
+   one. Diverges from Cowork's own v1 (single folder) on purpose — our
+   projects are meant to span a client's docs, shared templates, and an
+   output dir as separate places from day one, and Cowork issue #57177
+   (users asking for configurable base paths) is evidence single-folder is
+   already a friction point upstream. See §4, §5.1, §5.4, §6, §7 for what
+   this changes: project cards show a folder count, the header folder chip
+   becomes a dropdown, the right rail shows one root per folder, checkpoints
+   name folders explicitly, and project state stores a folder array.
+3. **File tree depth: 2 levels + lazy expand.** Full recursive upfront risks
+   hanging on real client folders (10k+ files) — expand on click instead.
+4. **Plan audit: keep plan cards in feed.** The approved plan card stays
+   permanently as the receipt's sibling — collapsing it after approval would
+   throw away the one thing that makes the loop auditable. If the feed gets
+   noisy, collapse individual steps inside the card, not the card itself.
