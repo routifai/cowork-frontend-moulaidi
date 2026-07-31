@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypatia V3 — Artifacts</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ink: '#0d0d0f',
+                        surface: '#ffffff',
+                        stone: '#fafafa',
+                        border: '#e7e7e9',
+                        accent: '#0051a5',
+                        gold: '#e8a821',
+                        success: '#10a37f'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        serif: ['Playfair Display', 'Georgia', 'serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    borderRadius: { panel: '22px' }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; overflow: hidden; background: #fbfbfc; color: #0d0d0f; }
+        .editorial-text { font-family: 'Playfair Display', serif; letter-spacing: -0.02em; }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.62);
+            backdrop-filter: blur(28px) saturate(1.4);
+            -webkit-backdrop-filter: blur(28px) saturate(1.4);
+            border: 1px solid rgba(231, 231, 233, 0.9);
+            box-shadow: 0 12px 40px rgba(13, 13, 15, 0.05);
+        }
+        .subtle-shadow { box-shadow: 0 4px 20px rgba(13, 13, 15, 0.04); }
+        ::-webkit-scrollbar { width: 0; }
+        input::placeholder { color: #a3a3a8; font-weight: 300; }
+
+        .grain {
+            position: fixed; inset: 0; z-index: 80; pointer-events: none;
+            opacity: 0.035; mix-blend-mode: multiply;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        .glitch-text { position: relative; }
+        .glitch-text::before, .glitch-text::after {
+            content: attr(data-text);
+            position: absolute; inset: 0; opacity: 0; pointer-events: none; white-space: nowrap;
+        }
+        .glitch-text.glitching::before { opacity: 0.85; color: #0051a5; animation: ga 0.24s steps(2) both; }
+        .glitch-text.glitching::after  { opacity: 0.85; color: #e8a821; animation: gb 0.24s steps(2) both; }
+        @keyframes ga {
+            0% { clip-path: inset(8% 0 62% 0); transform: translate(-4px, 1px); }
+            50% { clip-path: inset(42% 0 28% 0); transform: translate(3px, -1px); }
+            100% { clip-path: inset(70% 0 4% 0); transform: translate(-2px, 0); }
+        }
+        @keyframes gb {
+            0% { clip-path: inset(58% 0 16% 0); transform: translate(4px, -1px); }
+            50% { clip-path: inset(12% 0 66% 0); transform: translate(-3px, 1px); }
+            100% { clip-path: inset(36% 0 42% 0); transform: translate(2px, 0); }
+        }
+
+        .artifact-card { transition: transform 0.3s cubic-bezier(0.2,0.8,0.2,1), box-shadow 0.3s, border-color 0.2s; }
+        .artifact-card:hover { transform: translateY(-3px); box-shadow: 0 16px 40px rgba(13,13,15,0.08); border-color: #0d0d0f; }
+
+        /* Pulse-echo avatar: hairline ring w/ gold tick */
+        .ring-echo { position: relative; border: 1px solid #d4d4d8; border-radius: 9999px; }
+        .ring-echo::after {
+            content: ''; position: absolute; top: -1px; left: 50%; width: 3px; height: 3px;
+            transform: translateX(-50%); border-radius: 9999px; background: #e8a821;
+        }
+
+        /* Code viewer */
+        .code-view { font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.75; }
+        .code-view .ln { color: #c4c4ca; user-select: none; display: inline-block; width: 2.2em; text-align: right; margin-right: 1.2em; }
+        .c-kw { color: #0051a5; } .c-str { color: #10a37f; } .c-fn { color: #7c3aed; }
+        .c-com { color: #a3a3a8; font-style: italic; } .c-num { color: #b45309; } .c-tag { color: #be185d; }
+
+        /* Rendered markdown viewer */
+        .md-view h1 { font-family: 'Playfair Display', serif; font-size: 28px; margin-bottom: 4px; letter-spacing: -0.02em; }
+        .md-view h2 { font-size: 15px; font-weight: 600; margin: 22px 0 8px; }
+        .md-view p, .md-view li { font-size: 13.5px; font-weight: 300; line-height: 1.75; color: #3f3f46; }
+        .md-view ul { list-style: disc; padding-left: 1.2em; margin: 6px 0; }
+        .md-view .meta { font-family: 'JetBrains Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.25em; color: #a3a3a8; margin-bottom: 24px; }
+        .md-view strong { font-weight: 600; color: #0d0d0f; }
+
+        /* Sheet viewer */
+        .sheet-view { font-size: 12px; border-collapse: collapse; width: 100%; }
+        .sheet-view th { font-family: 'JetBrains Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: #71717a; font-weight: 500; text-align: right; padding: 8px 12px; border-bottom: 1px solid #e7e7e9; background: #fafafa; }
+        .sheet-view th:first-child, .sheet-view td:first-child { text-align: left; }
+        .sheet-view td { padding: 8px 12px; border-bottom: 1px solid rgba(13,13,15,0.04); text-align: right; font-variant-numeric: tabular-nums; }
+        .sheet-view td:first-child { font-weight: 500; }
+        .sheet-view .pos { color: #10a37f; } .sheet-view .neg { color: #dc2626; }
+        .sheet-view tr.total td { border-top: 1px solid #0d0d0f; border-bottom: none; font-weight: 600; }
+
+        /* Slide thumbs */
+        .slide-thumb { aspect-ratio: 16/9; background: white; border: 1px solid #e7e7e9; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; transition: border-color 0.2s, transform 0.2s; cursor: pointer; }
+        .slide-thumb:hover { border-color: #0051a5; transform: scale(1.02); }
+
+        @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+    </style>
+</head>
+<body>
+
+    <div class="grain"></div>
+
+    <div class="flex w-full h-screen">
+
+        <!-- ============================================= -->
+        <!-- SIDEBAR (V3, consistent with chat)            -->
+        <!-- ============================================= -->
+        <div class="w-72 bg-stone/90 backdrop-blur border-r border-border h-full flex flex-col pt-7 pb-5 px-4 z-30 shrink-0">
+            <div class="flex items-center justify-between px-2 mb-8">
+                <div class="flex items-center space-x-3">
+                    <div class="w-5 h-5 bg-ink rounded-full"></div>
+                    <span class="font-semibold text-base tracking-tight">Hypatia</span>
+                </div>
+                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Cowork</span>
+            </div>
+
+            <nav class="space-y-1 mb-8">
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-500 hover:text-ink transition text-sm font-medium rounded-lg hover:bg-white">
+                    <i data-lucide="message-square" class="w-4 h-4"></i><span>Chat</span>
+                </a>
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 bg-white rounded-lg shadow-sm border border-border text-ink font-medium text-sm">
+                    <i data-lucide="layers" class="w-4 h-4"></i><span>Artifacts</span>
+                    <span class="ml-auto text-[10px] font-mono text-gray-400">8</span>
+                </a>
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-500 hover:text-ink transition text-sm font-medium rounded-lg hover:bg-white">
+                    <i data-lucide="book-open" class="w-4 h-4"></i><span>Playbooks</span>
+                </a>
+            </nav>
+
+            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] px-2 mb-3">By session</div>
+            <div class="flex-1 overflow-y-auto space-y-1">
+                <div class="bg-white border border-border rounded-xl px-4 py-3 cursor-pointer subtle-shadow">
+                    <div class="text-sm font-medium text-ink truncate">RBC landing page build</div>
+                    <div class="text-xs text-gray-400 font-light truncate mt-1">4 artifacts · today</div>
+                </div>
+                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition">
+                    <div class="text-sm font-medium text-gray-600 truncate">Q3 earnings call prep</div>
+                    <div class="text-xs text-gray-400 font-light truncate mt-1">3 artifacts · Jul 28</div>
+                </div>
+                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition">
+                    <div class="text-sm font-medium text-gray-600 truncate">Client onboarding flow</div>
+                    <div class="text-xs text-gray-400 font-light truncate mt-1">1 artifact · Jul 24</div>
+                </div>
+            </div>
+
+            <div class="mt-auto pt-5 flex items-center space-x-3 px-3">
+                <div class="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium text-[11px]">SM</div>
+                <div class="text-sm font-medium text-ink truncate">Simo M.</div>
+            </div>
+        </div>
+
+        <!-- ============================================= -->
+        <!-- MAIN : ARTIFACT LIBRARY                       -->
+        <!-- ============================================= -->
+        <div class="flex-1 flex flex-col h-full min-w-0 relative">
+
+            <!-- Header -->
+            <div class="flex items-end justify-between px-10 pt-8 pb-6 border-b border-border bg-white/70 backdrop-blur-md z-10">
+                <div>
+                    <div class="flex items-center space-x-3 mb-3">
+                        <div class="ring-echo w-4 h-4"></div>
+                        <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.3em]">Everything Hypatia made for you</span>
+                    </div>
+                    <h1 id="page-title" data-text="Artifacts." class="glitch-text editorial-text text-4xl text-ink">Artifacts.</h1>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <div class="relative">
+                        <i data-lucide="search" class="w-3.5 h-3.5 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+                        <input id="search" type="text" placeholder="Search files…" class="w-64 bg-white border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-ink transition">
+                    </div>
+                    <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]" id="count-label">8 files</span>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="flex items-center space-x-2 px-10 py-4">
+                <button class="filter-chip active text-xs font-medium px-3.5 py-1.5 rounded-lg border transition" data-filter="all">All</button>
+                <button class="filter-chip text-xs font-medium px-3.5 py-1.5 rounded-lg border transition" data-filter="deck">Decks</button>
+                <button class="filter-chip text-xs font-medium px-3.5 py-1.5 rounded-lg border transition" data-filter="sheet">Models</button>
+                <button class="filter-chip text-xs font-medium px-3.5 py-1.5 rounded-lg border transition" data-filter="doc">Documents</button>
+                <button class="filter-chip text-xs font-medium px-3.5 py-1.5 rounded-lg border transition" data-filter="code">Code</button>
+                <button class="filter-chip text-xs font-medium px-3.5 py-1.5 rounded-lg border transition" data-filter="image">Media</button>
+            </div>
+
+            <!-- Grid -->
+            <div class="flex-1 overflow-y-auto px-10 pb-10" id="library"></div>
+        </div>
+    </div>
+
+    <!-- ============================================= -->
+    <!-- VIEWER : slide-over panel                     -->
+    <!-- ============================================= -->
+    <div id="viewer-backdrop" class="fixed inset-0 z-40 bg-ink/10 backdrop-blur-[2px] opacity-0 pointer-events-none transition-opacity duration-300"></div>
+    <div id="viewer" class="fixed top-0 right-0 bottom-0 z-50 w-[58%] min-w-[560px] bg-white border-l border-border shadow-2xl translate-x-full flex flex-col">
+        <!-- Viewer header -->
+        <div class="flex items-center justify-between px-8 py-5 border-b border-border shrink-0">
+            <div class="flex items-center space-x-4 min-w-0">
+                <div id="viewer-icon" class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"></div>
+                <div class="min-w-0">
+                    <h2 id="viewer-name" class="text-base font-semibold text-ink truncate"></h2>
+                    <div id="viewer-meta" class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.2em] mt-0.5 truncate"></div>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2 shrink-0">
+                <button class="p-2 text-gray-400 hover:text-ink transition rounded-lg hover:bg-stone" title="Copy"><i data-lucide="clipboard" class="w-4 h-4"></i></button>
+                <button class="p-2 text-gray-400 hover:text-ink transition rounded-lg hover:bg-stone" title="Download"><i data-lucide="download" class="w-4 h-4"></i></button>
+                <button class="p-2 text-gray-400 hover:text-ink transition rounded-lg hover:bg-stone" title="Open in Finder"><i data-lucide="folder-open" class="w-4 h-4"></i></button>
+                <div class="w-px h-5 bg-border mx-1"></div>
+                <button id="viewer-close" class="p-2 text-gray-400 hover:text-ink transition rounded-lg hover:bg-stone" title="Close (Esc)"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+        </div>
+        <!-- Provenance strip -->
+        <div class="flex items-center space-x-2 px-8 py-2.5 bg-stone border-b border-border text-[11px] shrink-0">
+            <div class="ring-echo w-3.5 h-3.5 shrink-0"></div>
+            <span class="text-gray-500 font-light truncate" id="viewer-provenance"></span>
+            <a href="#" class="text-accent font-medium hover:underline shrink-0 ml-auto">Open conversation →</a>
+        </div>
+        <!-- Viewer body -->
+        <div id="viewer-body" class="flex-1 overflow-y-auto"></div>
+    </div>
+
+<script>
+lucide.createIcons();
+
+// =====================================================================
+// DATA — mock artifacts with real preview content per type
+// =====================================================================
+const TYPE_STYLE = {
+    deck:  { icon: 'presentation', bg: '#fff7ed', fg: '#ea580c', label: 'Deck' },
+    sheet: { icon: 'table',        bg: '#f0fdf4', fg: '#16a34a', label: 'Model' },
+    doc:   { icon: 'file-text',    bg: '#eff6ff', fg: '#0051a5', label: 'Document' },
+    code:  { icon: 'code-2',       bg: '#f5f3ff', fg: '#7c3aed', label: 'Code' },
+    image: { icon: 'image',        bg: '#fefce8', fg: '#b45309', label: 'Media' },
+};
+
+const ARTIFACTS = [
+    {
+        id: 'client-review', name: 'Client review.pptx', type: 'deck', day: 'Today',
+        meta: '12 slides · 4.2 MB · 5:12 PM', session: 'RBC landing page build',
+        provenance: 'Generated from client email history (24 threads) + 6 meeting notes',
+        updated: true,
+    },
+    {
+        id: 'valuation', name: 'Valuation model.xlsx', type: 'sheet', day: 'Today',
+        meta: '4 sheets · 890 KB · 5:09 PM', session: 'RBC landing page build',
+        provenance: 'Updated scenario summary — 3 cases refreshed against Q3 actuals',
+        updated: true,
+    },
+    {
+        id: 'landing-tsx', name: 'landing-page.tsx', type: 'code', day: 'Today',
+        meta: '214 lines · TypeScript · 4:58 PM', session: 'RBC landing page build',
+        provenance: 'Scaffolded during the RBC landing page build',
+    },
+    {
+        id: 'theme-css', name: 'theme.css', type: 'code', day: 'Today',
+        meta: '96 lines · CSS · 4:58 PM', session: 'RBC landing page build',
+        provenance: 'RBC design tokens extracted from the brand brief',
+    },
+    {
+        id: 'earnings-recap', name: 'Q3 earnings recap.md', type: 'doc', day: 'Jul 28',
+        meta: '1,840 words · 5 min read', session: 'Q3 earnings call prep',
+        provenance: 'Synthesized from the 47-page earnings call transcript',
+    },
+    {
+        id: 'comp-table', name: 'comp-table.csv', type: 'sheet', day: 'Jul 28',
+        meta: '9 rows · 6 columns', session: 'Q3 earnings call prep',
+        provenance: 'Comparables pulled and normalized from filings',
+    },
+    {
+        id: 'follow-up', name: 'Client follow-up.md', type: 'doc', day: 'Jul 28',
+        meta: '320 words · draft', session: 'Q3 earnings call prep',
+        provenance: 'Drafted from meeting notes — awaiting your review',
+    },
+    {
+        id: 'hero-img', name: 'rbc-hero.png', type: 'image', day: 'Jul 24',
+        meta: '2400 × 1350 · 1.1 MB', session: 'Client onboarding flow',
+        provenance: 'Hero image concept for the client portal landing page',
+    },
+];
+
+// =====================================================================
+// PREVIEW RENDERERS — one per artifact type
+// =====================================================================
+const PREVIEWS = {
+    'client-review': () => `
+        <div class="p-8">
+            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] mb-4">12 slides · Client strategy review</div>
+            <div class="grid grid-cols-3 gap-4">
+                ${[
+                    { t: 'Client Strategy Review', s: 'Priorities, open loops & opportunities', title: true },
+                    { t: 'Relationship history', s: '24 threads · 18 months' },
+                    { t: 'Meeting priorities', s: 'Top 5, ranked' },
+                    { t: 'Portfolio snapshot', s: 'AUM · allocation · drift', chart: true },
+                    { t: 'Q3 performance', s: 'vs benchmark', chart: true },
+                    { t: 'Scenario analysis', s: 'Base · Bull · Bear' },
+                    { t: 'Fee schedule', s: 'Current vs proposed' },
+                    { t: 'Opportunities', s: '3 recommendations' },
+                    { t: 'Next actions', s: 'Owner · deadline' },
+                ].map((sl, i) => `
+                    <div class="slide-thumb">
+                        ${sl.title
+                            ? `<div class="flex-1 flex flex-col justify-center">
+                                 <div class="editorial-text text-[13px] leading-tight">${sl.t}</div>
+                                 <div class="text-[8px] text-gray-400 mt-1 font-light">${sl.s}</div>
+                               </div>
+                               <div class="h-[3px] w-8 rounded-full" style="background: linear-gradient(to right, #e8a821, #0051a5)"></div>`
+                            : `<div class="text-[10px] font-medium leading-tight">${sl.t}</div>
+                               <div class="text-[8px] text-gray-400 font-light mb-auto">${sl.s}</div>
+                               ${sl.chart
+                                    ? `<div class="flex items-end space-x-1 h-8">
+                                        ${[40, 65, 45, 80, 60, 90].map(h => `<div class="flex-1 rounded-sm" style="height:${h}%; background: ${h > 70 ? '#0051a5' : '#dbeafe'}"></div>`).join('')}
+                                       </div>`
+                                    : `<div class="space-y-1.5">
+                                        <div class="h-1 rounded-full bg-gray-100 w-full"></div>
+                                        <div class="h-1 rounded-full bg-gray-100 w-4/5"></div>
+                                        <div class="h-1 rounded-full bg-gray-100 w-3/5"></div>
+                                       </div>`}`}
+                    </div>
+                    <span class="hidden">${i}</span>`).join('')}
+            </div>
+        </div>`,
+
+    'valuation': () => `
+        <div class="p-8">
+            <div class="flex items-center justify-between mb-4">
+                <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Sheet 1 of 4 · Scenario summary</div>
+                <div class="flex space-x-1.5">
+                    ${['Summary', 'DCF', 'Comps', 'Inputs'].map((s, i) => `<span class="text-[10px] font-mono px-2.5 py-1 rounded-md ${i === 0 ? 'bg-ink text-white' : 'bg-stone text-gray-500 border border-border'}">${s}</span>`).join('')}
+                </div>
+            </div>
+            <div class="border border-border rounded-xl overflow-hidden">
+                <table class="sheet-view">
+                    <thead><tr><th>Case</th><th>EV / EBITDA</th><th>Implied px</th><th>vs Spot</th><th>Probability</th></tr></thead>
+                    <tbody>
+                        <tr><td>Base</td><td>11.2×</td><td>$182.40</td><td class="pos">+8.4%</td><td>55%</td></tr>
+                        <tr><td>Bull</td><td>12.8×</td><td>$208.10</td><td class="pos">+23.7%</td><td>25%</td></tr>
+                        <tr><td>Bear</td><td>9.1×</td><td>$148.30</td><td class="neg">−11.9%</td><td>20%</td></tr>
+                        <tr class="total"><td>Weighted</td><td>11.2×</td><td>$182.00</td><td class="pos">+8.2%</td><td>—</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-4 flex items-center space-x-2 text-[11px] text-gray-400 font-light">
+                <i data-lucide="info" class="w-3.5 h-3.5"></i>
+                <span>3 cells updated this session — WACC 8.4% → 8.6%, terminal growth held at 2.5%</span>
+            </div>
+        </div>`,
+
+    'landing-tsx': () => `
+        <div class="p-8 code-view text-ink">
+<div><span class="ln">1</span><span class="c-kw">import</span> { motion } <span class="c-kw">from</span> <span class="c-str">"motion/react"</span>;</div>
+<div><span class="ln">2</span><span class="c-kw">import</span> { Hero, RateBand, TrustFooter } <span class="c-kw">from</span> <span class="c-str">"./components"</span>;</div>
+<div><span class="ln">3</span></div>
+<div><span class="ln">4</span><span class="c-com">// RBC client portal — single saturated color, ink + stone elsewhere.</span></div>
+<div><span class="ln">5</span><span class="c-kw">export default function</span> <span class="c-fn">LandingPage</span>() {</div>
+<div><span class="ln">6</span>  <span class="c-kw">return</span> (</div>
+<div><span class="ln">7</span>    &lt;<span class="c-tag">main</span> className=<span class="c-str">"min-h-screen bg-[#fbfbfc]"</span>&gt;</div>
+<div><span class="ln">8</span>      &lt;<span class="c-tag">Hero</span></div>
+<div><span class="ln">9</span>        headline=<span class="c-str">"Banking that works while you don't"</span></div>
+<div><span class="ln">10</span>        accent=<span class="c-str">"#0051a5"</span></div>
+<div><span class="ln">11</span>      /&gt;</div>
+<div><span class="ln">12</span>      &lt;<span class="c-tag">RateBand</span> products={<span class="c-num">3</span>} layout=<span class="c-str">"horizontal"</span> /&gt;</div>
+<div><span class="ln">13</span>      &lt;<span class="c-tag">TrustFooter</span> compact /&gt;</div>
+<div><span class="ln">14</span>    &lt;/<span class="c-tag">main</span>&gt;</div>
+<div><span class="ln">15</span>  );</div>
+<div><span class="ln">16</span>}</div>
+<div class="mt-6 text-[11px] text-gray-400 font-light font-sans">… 198 more lines</div>
+        </div>`,
+
+    'theme-css': () => `
+        <div class="p-8 code-view text-ink">
+<div><span class="ln">1</span><span class="c-com">/* RBC design tokens — extracted from brand brief */</span></div>
+<div><span class="ln">2</span><span class="c-tag">:root</span> {</div>
+<div><span class="ln">3</span>  <span class="c-fn">--rbc-blue</span>: <span class="c-str">#0051a5</span>;</div>
+<div><span class="ln">4</span>  <span class="c-fn">--rbc-gold</span>: <span class="c-str">#e8a821</span>;</div>
+<div><span class="ln">5</span>  <span class="c-fn">--ink</span>: <span class="c-str">#0d0d0f</span>;</div>
+<div><span class="ln">6</span>  <span class="c-fn">--stone</span>: <span class="c-str">#fafafa</span>;</div>
+<div><span class="ln">7</span>  <span class="c-fn">--radius-panel</span>: <span class="c-num">22px</span>;</div>
+<div><span class="ln">8</span>}</div>
+<div class="mt-6 text-[11px] text-gray-400 font-light font-sans">… 88 more lines</div>
+        </div>`,
+
+    'earnings-recap': () => `
+        <div class="p-10 max-w-2xl md-view">
+            <div class="meta">Q3 FY26 · Earnings call recap · 5 min read</div>
+            <h1>Q3 Earnings: strong beat, cautious guide</h1>
+            <p>Revenue of <strong>$4.82B (+9.4% y/y)</strong> beat consensus by 3.1%, driven by net interest margin expansion and record capital-markets fees. Management guided Q4 conservatively, citing credit normalization.</p>
+            <h2>What mattered</h2>
+            <ul>
+                <li><strong>NIM 2.86%</strong> — up 11 bps sequentially; deposit repricing ahead of plan.</li>
+                <li><strong>PCL $412M</strong> — above street's $385M; management called it "prudent seasoning."</li>
+                <li><strong>Capital markets +21%</strong> — strongest quarter in three years.</li>
+            </ul>
+            <h2>Management tone</h2>
+            <p>Notably more cautious than Q2. The CFO used "normalization" nine times — up from twice last quarter. Read: expect provisions to keep climbing.</p>
+            <h2>For the client review</h2>
+            <p>Overweight thesis intact but trim the Q4 catalyst framing. Position the conversation around margin durability, not fee growth.</p>
+        </div>`,
+
+    'comp-table': () => `
+        <div class="p-8">
+            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] mb-4">9 rows · normalized from filings</div>
+            <div class="border border-border rounded-xl overflow-hidden">
+                <table class="sheet-view">
+                    <thead><tr><th>Name</th><th>Mkt cap</th><th>P / E</th><th>P / B</th><th>Div yield</th><th>ROE</th></tr></thead>
+                    <tbody>
+                        <tr><td>RY</td><td>$198B</td><td>12.4×</td><td>1.9×</td><td>3.4%</td><td class="pos">15.8%</td></tr>
+                        <tr><td>TD</td><td>$142B</td><td>11.1×</td><td>1.5×</td><td>4.1%</td><td>13.2%</td></tr>
+                        <tr><td>BMO</td><td>$96B</td><td>10.8×</td><td>1.3×</td><td>4.4%</td><td>12.1%</td></tr>
+                        <tr><td>BNS</td><td>$81B</td><td>10.2×</td><td>1.2×</td><td>5.1%</td><td>11.4%</td></tr>
+                        <tr><td>CM</td><td>$62B</td><td>9.8×</td><td>1.3×</td><td>4.8%</td><td>12.6%</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-4 text-[11px] text-gray-400 font-light">… 4 more rows</div>
+        </div>`,
+
+    'follow-up': () => `
+        <div class="p-10 max-w-2xl md-view">
+            <div class="meta">Draft · awaiting review</div>
+            <h1>Following up on Thursday</h1>
+            <p>Hi Margaret,</p>
+            <p>Thank you for the time on Thursday. As promised, three things are attached: the refreshed <strong>valuation model</strong> with the Q3 actuals, the <strong>scenario summary</strong> we walked through, and a one-pager on the fee restructuring.</p>
+            <p>The short version: the base case still supports an <strong>8% upside</strong>, and the margin story looks more durable than the street is pricing. I'd suggest we revisit allocation before the December window.</p>
+            <p>Would early next week work for a 30-minute call?</p>
+            <p>Best,<br>Simo</p>
+        </div>`,
+
+    'hero-img': () => `
+        <div class="p-8">
+            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] mb-4">2400 × 1350 · concept render</div>
+            <div class="rounded-xl overflow-hidden border border-border" style="aspect-ratio: 16/9; background: linear-gradient(135deg, #0d0d0f 0%, #0051a5 55%, #1a66ff 80%, #dceeff 100%);">
+                <div class="h-full flex flex-col justify-end p-10">
+                    <div class="editorial-text text-3xl text-white/95 max-w-sm leading-tight">Banking that works while you don't.</div>
+                    <div class="h-[3px] w-14 rounded-full mt-4" style="background: #e8a821"></div>
+                </div>
+            </div>
+        </div>`,
+};
+
+// =====================================================================
+// LIBRARY GRID
+// =====================================================================
+const library = document.getElementById('library');
+let activeFilter = 'all';
+let query = '';
+
+function render() {
+    const filtered = ARTIFACTS.filter(a =>
+        (activeFilter === 'all' || a.type === activeFilter) &&
+        (!query || a.name.toLowerCase().includes(query) || a.session.toLowerCase().includes(query))
+    );
+    document.getElementById('count-label').textContent = `${filtered.length} file${filtered.length === 1 ? '' : 's'}`;
+
+    const byDay = [...new Set(filtered.map(a => a.day))];
+    library.innerHTML = byDay.map(day => `
+        <div class="pt-2 pb-6">
+            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] mb-4">${day}</div>
+            <div class="grid grid-cols-3 gap-4">
+                ${filtered.filter(a => a.day === day).map(a => {
+                    const s = TYPE_STYLE[a.type];
+                    return `
+                    <button class="artifact-card text-left bg-surface border border-border rounded-2xl p-5 cursor-pointer" data-id="${a.id}">
+                        <div class="flex items-start justify-between mb-6">
+                            <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:${s.bg}">
+                                <i data-lucide="${s.icon}" class="w-5 h-5" style="color:${s.fg}"></i>
+                            </div>
+                            ${a.updated ? '<span class="text-[9px] font-mono uppercase tracking-[0.2em] text-gold border border-border rounded-full px-2 py-0.5">Updated</span>' : ''}
+                        </div>
+                        <div class="text-sm font-medium text-ink truncate mb-1">${a.name}</div>
+                        <div class="text-[11px] text-gray-400 font-light truncate">${a.meta}</div>
+                        <div class="flex items-center space-x-1.5 mt-4 pt-3 border-t border-border/60">
+                            <div class="ring-echo w-3 h-3 shrink-0"></div>
+                            <span class="text-[10px] text-gray-400 font-light truncate">${a.session}</span>
+                        </div>
+                    </button>`;
+                }).join('')}
+            </div>
+        </div>`).join('');
+
+    lucide.createIcons();
+    gsap.from('#library .artifact-card', { opacity: 0, y: 14, duration: 0.5, stagger: 0.04, ease: 'power2.out' });
+
+    library.querySelectorAll('.artifact-card').forEach(card => {
+        card.addEventListener('click', () => openViewer(card.dataset.id));
+    });
+}
+
+// Filter chips
+document.querySelectorAll('.filter-chip').forEach(chip => {
+    styleChip(chip, chip.dataset.filter === activeFilter);
+    chip.addEventListener('click', () => {
+        activeFilter = chip.dataset.filter;
+        document.querySelectorAll('.filter-chip').forEach(c => styleChip(c, c.dataset.filter === activeFilter));
+        render();
+    });
+});
+function styleChip(chip, active) {
+    chip.style.background = active ? '#0d0d0f' : 'white';
+    chip.style.color = active ? 'white' : '#71717a';
+    chip.style.borderColor = active ? '#0d0d0f' : '#e7e7e9';
+}
+
+document.getElementById('search').addEventListener('input', (e) => {
+    query = e.target.value.trim().toLowerCase();
+    render();
+});
+
+// =====================================================================
+// VIEWER
+// =====================================================================
+const viewer = document.getElementById('viewer');
+const backdrop = document.getElementById('viewer-backdrop');
+let viewerOpen = false;
+
+function openViewer(id) {
+    const a = ARTIFACTS.find(x => x.id === id);
+    if (!a) return;
+    const s = TYPE_STYLE[a.type];
+
+    document.getElementById('viewer-name').textContent = a.name;
+    document.getElementById('viewer-meta').textContent = `${s.label} · ${a.meta}`;
+    document.getElementById('viewer-provenance').textContent = a.provenance;
+    const icon = document.getElementById('viewer-icon');
+    icon.style.background = s.bg;
+    icon.innerHTML = `<i data-lucide="${s.icon}" class="w-5 h-5" style="color:${s.fg}"></i>`;
+
+    document.getElementById('viewer-body').innerHTML = PREVIEWS[id]();
+    lucide.createIcons();
+
+    // Title glitches as the panel arrives — the V3 punctuation
+    const title = document.getElementById('page-title');
+    title.classList.add('glitching');
+    setTimeout(() => title.classList.remove('glitching'), 260);
+
+    viewerOpen = true;
+    backdrop.style.pointerEvents = 'auto';
+    backdrop.style.opacity = '1';
+    gsap.to(viewer, { x: 0, duration: 0.55, ease: 'power3.out' });
+    gsap.from('#viewer-body > *', { opacity: 0, y: 16, duration: 0.5, delay: 0.15, ease: 'power2.out' });
+}
+
+function closeViewer() {
+    if (!viewerOpen) return;
+    viewerOpen = false;
+    backdrop.style.pointerEvents = 'none';
+    backdrop.style.opacity = '0';
+    gsap.to(viewer, { xPercent: 100, duration: 0.4, ease: 'power3.in', onComplete: () => {
+        gsap.set(viewer, { xPercent: 0, x: viewer.offsetWidth });
+    }});
+}
+
+// Start off-screen using px so the first open animates from the edge
+gsap.set(viewer, { x: () => viewer.offsetWidth });
+
+document.getElementById('viewer-close').addEventListener('click', closeViewer);
+backdrop.addEventListener('click', closeViewer);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeViewer(); });
+
+render();
+</script>
+</body>
+</html>

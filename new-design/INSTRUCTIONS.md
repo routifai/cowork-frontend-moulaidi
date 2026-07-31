@@ -114,6 +114,27 @@ promises, not timers — the timeline waits on them (min display time ~2.5 s so
 the metamorphosis never feels cut short). Reduced motion: skip flash and
 charge, crossfade orb→pulse, show statuses without shimmer.
 
+### Phase 6 — Artifacts library
+Reference: `reference/artifacts-v3.html`. A dedicated Artifacts view listing
+every file the agent generated, with a click-to-view slide-over:
+
+- Grid of artifact cards grouped under mono day headers; each card carries a
+  type icon chip (deck/model/doc/code/media), meta line, gold UPDATED badge,
+  and a provenance footer naming the originating session.
+- Live search + type filter chips; count label tracks results.
+- Slide-over viewer (58% width, backdrop blur, Esc/backdrop close) with
+  copy/download/open-in-Finder actions and a provenance strip — what inputs
+  produced the file + "Open conversation →" deep link back to the source
+  chat. Provenance is the differentiator; keep it.
+- Per-type preview renderers: pptx → slide-thumbnail grid; xlsx/csv →
+  tabular-numeral tables with sheet tabs and delta coloring; md → rendered
+  editorial document; code → line-numbered highlighted source; images →
+  direct render.
+
+Integrate against the existing `usePlaygroundArtifacts` store + session
+files; real file reads go through the Tauri fs plugin. Card → viewer motion:
+GSAP slide-in + content stagger, glitch on the page title as punctuation.
+
 ## 4. Hard requirements
 
 - `prefers-reduced-motion`: presences drop to slow drift, no glitch, no typewriter
