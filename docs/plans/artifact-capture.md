@@ -4,343 +4,440 @@ How to reliably know **every file the agent created or changed** during a
 session — including ones written by a script the agent ran, not just files
 it wrote directly — so they can be surfaced as artifacts (in the Artifacts
 library, in per-message chips, in the workspace file rail from the Cowork-UX
-concept). Researched 2026-07-31 against the actual pi-mono SDK source and
-this repo's own architecture. No hackery: no polling loops, no guessing from
-chat text, no directory-diffing as the primary mechanism.
+concept). Researched 2026-07-31 against the actual pi-mono SDK source, our
+own vendored sidecar bundle, and this repo's architecture. No hackery: no
+polling loops, no guessing from chat text, no directory-diffing as the
+primary mechanism.
+
+**Revision note:** this doc originally recommended a new Rust-side watcher
+as the primary mechanism, on the assumption that a pi extension wasn't
+buildable without sidecar source access. That assumption was wrong — see
+§3. The extension route is now the primary recommendation; the Rust design
+is preserved as Appendix A for the one gap it still uniquely fills.
 
 ---
 
-## 0. Correcting a claim already in circulation
+## 0. Correcting two claims already in circulation
 
-A message going around (screenshotted from another session) asserts pi
-recently added a `bash_execution_update` streaming event "correlated with
-request IDs" for direct RPC bash commands. **This does not exist.** I
-fetched the actual SDK docs and source rather than trust that claim:
+Two messages have gone around proposing fixes for this. Neither was taken
+at face value — both were checked against the actual SDK source and, where
+possible, our own vendored sidecar bundle.
 
-- `packages/coding-agent/docs/json.md` documents the complete event union.
-  Tool execution is generic for every tool, bash included — there is no
-  bash-specific variant:
-  `tool_execution_start | tool_execution_update | tool_execution_end`
-  (also present but unrelated to file tracking: `queue_update`,
-  `compaction_start/end`, `auto_retry_start/end`,
-  `summarization_retry_scheduled/attempt_start/finished`).
-- `packages/coding-agent/src/core/tools/bash.ts` — the bash tool's own
-  source — confirms its result carries only combined stdout/stderr text,
-  truncation metadata, and an optional path to the full output if truncated.
-  No file list, no cwd, no exit code in the structured result (exit code
-  only appears inside the error-message text on failure).
-- Our own `src/types/pi-events.ts` (already in this repo, sourced from the
-  same docs) matches this exactly — there is no bash-specific event type
-  defined anywhere in our wire protocol either.
+### Claim 1 — "pi added a `bash_execution_update` streaming event"
 
-So the "detective" framing was half right for the wrong reason: bash-spawned
-files really are invisible to the tool-call stream, but not because a new
-streaming feature almost-but-not-quite solved it — it's because **no such
-feature exists**, full stop, in any version. The real fix is filesystem
-observation, not waiting for a better event.
+**False.** `packages/coding-agent/docs/json.md` documents the complete event
+union. Tool execution is generic for every tool, bash included — there is
+no bash-specific variant. `bash.ts` — the bash tool's own source — confirms
+its result carries only combined stdout/stderr text and truncation
+metadata; no file list, no cwd, no exit code in the structured result. Our
+own `src/types/pi-events.ts` already matches this. No such event exists in
+any version, upstream or vendored.
+
+### Claim 2 — "build a pi extension today: wrap the bash tool, scope a
+watcher to the call, emit a custom event or append `{ wroteFile, path }` to
+the tool result"
+
+**Directionally right, wrong on two mechanics.** The core idea — an
+extension, loaded without upstream approval, scoping a watcher to one bash
+call — is correct and is what this doc now recommends. But:
+
+- *"Append to the tool result"* — not via `tool_execution_start` or
+  `tool_execution_end`. Per `docs/extensions.md`, those two are
+  **observational only**; no return-value mutation is documented for them.
+  The event that **can** modify a result is a distinct one, `tool_result`:
+  *"Can modify result... handlers can return partial patches (`content`,
+  `details`, `isError`, or `usage`)"*. That's the correct hook.
+- *"Emit your own custom event"* — there's no documented mechanism for an
+  extension to push an arbitrary event into the session's serialized wire
+  stream that a frontend consumer would see. The only bus mentioned,
+  `pi.events`, is explicitly *"Shared event bus for communication between
+  extensions"* — internal, not serialized out. The way data actually
+  reaches this app is the mutation path above: patch `details` on the bash
+  tool's own result via `tool_result`, which rides the `tool_execution_end`
+  event's existing `result.details` field — the exact channel our frontend
+  already parses for `show_artifact` (`pi-events.ts:148-152`). No custom
+  event type needed or available.
+
+Sources: [pi-mono `docs/json.md`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/json.md), [`docs/extensions.md`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md), [`src/core/tools/write.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/write.ts), [`edit.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/edit.ts), [`bash.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/bash.ts).
 
 ## 1. What's actually true, with sources
 
 | Claim | Verdict | Source |
 |---|---|---|
-| `write`/`edit` tool calls carry the file path in their call arguments | **True** | `tools/write.ts`: `path: Type.String(...)`. `tools/edit.ts`: `path: Type.String(...)` (a legacy `file_path` alias exists in some renderers) |
-| The path is knowable the moment the call *starts*, not just when it ends | **True** | `tool_execution_start` already includes `args`, identical shape to what `tool_execution_end` echoes — the SDK doesn't withhold `path` until completion |
-| `write`'s structured result names the path again | **False, mostly** | `write.ts` returns `details: undefined`; the path only reappears inside a human-readable success string (`"Successfully wrote {n} bytes to {path}"`). Never parse this string — use `args.path` from the start/end event instead, which is structured and available earlier |
-| `edit`'s structured result includes a diff | **True** | `details: { diff, patch, firstChangedLine }` — useful for a richer "what changed" chip, not required for path detection |
-| Bash tool result reports files it created | **False** | Confirmed absent from `BashToolDetails` (`{ truncation?, fullOutputPath? }`) |
-| SDK provides a built-in filesystem watcher / fs-change hook | **False** | `docs/extensions.md` explicitly states extensions must implement their own; the SDK provides none |
-| Session lifecycle events exist to scope a custom watcher's lifetime | **True** | `session_start` (`reason: "startup"\|"reload"\|"new"\|"resume"\|"fork"`) and `session_shutdown` (mirrored reasons) are real, documented hooks |
-| Extension factories must not start watchers/timers themselves | **True, verbatim** | `docs/extensions.md`: *"Extension factories may run in invocations that never start a session. Do not start background resources such as processes, sockets, file watchers, or timers from the factory."* Defer to `session_start`, clean up in `session_shutdown` |
-| A session's working directory is knowable structurally | **True** | The wire protocol's `session` event carries `cwd` (see `PiSessionEvent` in our own `pi-events.ts`) |
-
-Sources: [pi-mono `docs/json.md`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/json.md), [`docs/extensions.md`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md), [`src/core/tools/write.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/write.ts), [`edit.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/edit.ts), [`bash.ts`](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/src/core/tools/bash.ts).
+| `write`/`edit` tool calls carry the file path in their call arguments | **True** | `write.ts`: `path: Type.String(...)`. `edit.ts`: `path: Type.String(...)` (legacy `file_path` alias in some renderers) |
+| The path is knowable the moment the call *starts* | **True** | `tool_execution_start` already includes `args`, same shape `tool_execution_end` echoes |
+| `write`'s structured result names the path again | **False, mostly** | `write.ts` returns `details: undefined`; path only reappears in a human-readable success string. Use `args.path` instead — structured, earlier |
+| `edit`'s structured result includes a diff | **True** | `details: { diff, patch, firstChangedLine }` |
+| Bash tool result reports files it created | **False** | `BashToolDetails` = `{ truncation?, fullOutputPath? }` only |
+| SDK provides a built-in filesystem watcher | **False** | `docs/extensions.md`: extensions must implement their own |
+| `bash_execution_update` event exists | **False** | See §0, Claim 1 |
+| `tool_execution_start`/`tool_execution_end` can be mutated to attach custom data | **False** | Observational only — see §0, Claim 2 |
+| `tool_result` can attach custom data to a tool's result | **True** | *"Can modify result... partial patches (`content`, `details`, `isError`, `usage`)"* |
+| An extension can emit an arbitrary event into the frontend-visible wire stream | **False / not documented** | Only `pi.events`, internal to extensions |
+| Extensions require sidecar source access to build | **False — this doc's own earlier error** | See §3 |
+| Session lifecycle hooks exist to scope a watcher's lifetime | **True** | `session_start` (`reason: "startup"\|"reload"\|"new"\|"resume"\|"fork"`), `session_shutdown` |
+| Extension factories must not start background resources themselves | **True, verbatim** | *"Extension factories may run in invocations that never start a session. Do not start background resources such as processes, sockets, file watchers, or timers from the factory."* |
+| A session's working directory is knowable structurally | **True** | Wire protocol's `session` event carries `cwd`; extension `ctx.cwd` too |
 
 ## 2. The real problem, stated precisely
 
-Not "bash vs. everything else." The accurate split is:
+Not "bash vs. everything else." The accurate split:
 
 - **Self-reporting tools** — any tool whose call arguments or structured
-  result name the exact path(s) touched. `write` and `edit` are the two
-  built-ins that qualify today. (If the sidecar's extension set ever adds a
-  multi-file tool — `multiedit`, `apply_patch` — the same rule applies:
-  extract every `path`/`file_path` string or `paths`/`files` array found in
-  `args`.) **Zero infrastructure needed** — this is a pure function over
-  events we already receive.
-- **Non-self-reporting tools** — `bash`, and *any* extension tool (including
-  a future Hypatia-specific one) whose `execute()` writes files without
-  naming them in its result. The model can hide file creation from us
-  arbitrarily deeply (a Python script invoked via bash, which itself shells
-  out to a converter, which writes the real output). No amount of parsing
-  the tool-call stream closes this gap **by construction** — the SDK has no
-  such reporting for shell-outs, confirmed above. The only correct fix is
-  independently observing the filesystem.
+  result name the exact path(s) touched. `write` and `edit` qualify today.
+  Zero infrastructure needed — pure function over events already received
+  (§4.9).
+- **Non-self-reporting tools** — `bash`, and any extension tool whose
+  `execute()` writes files without naming them. The model can hide file
+  creation arbitrarily deep (a script that shells out to a converter that
+  writes the real output). No amount of parsing the tool-call stream closes
+  this by construction. The fix is independently observing the filesystem
+  — the only question is *where that observation runs*.
 
-## 3. Where the fix can actually live in this codebase
+## 3. Where the fix can live — corrected
 
-Two architectural options exist in theory; only one is buildable from this
-repo today.
+This doc originally concluded a pi extension wasn't buildable from this
+repo because `src-tauri/agent-sidecar/index.cjs` is a gitignored,
+prebuilt bundle with no source here. **That reasoning doesn't hold**:
+extensions are a first-party, runtime-loaded plugin mechanism, entirely
+decoupled from the bundle's own source. Per `docs/extensions.md`, pi
+auto-discovers extensions from:
 
-**Option A — a pi extension inside the sidecar**, using `session_start` /
-`session_shutdown` to run a watcher colocated with the agent process. This
-is the SDK-idiomatic place for it and is where I'd put it if we owned that
-code. We don't: `src-tauri/agent-sidecar/index.cjs` is a 347k-line minified
-bundle, **gitignored** (`.gitignore:9`), dropped in by a separate build this
-repo doesn't run. There's no source here to add an extension to.
+- `~/.pi/agent/extensions/*.ts` — **global scope**, not project-scoped
+- `.pi/extensions/*.ts` — project-local, *"load only after the project is
+  trusted"*
+- paths listed in `settings.json`'s `"extensions"` array
 
-**Option B — a native watcher in the Tauri Rust layer**, which we do fully
-own. `src-tauri/src/lib.rs` already relays every sidecar stdout line to the
-frontend via `app.emit(kind, tag_with_session_id(event, session_id))`
-(lib.rs:616) and already threads a per-session `cwd` through `new_session`
-(lib.rs:1107) — the exact input a watcher needs. **This is the buildable,
-correct-today option**, and everything below designs it.
+None of these require touching `index.cjs`. A `.ts` file dropped at
+`~/.pi/agent/extensions/` is picked up the same way a hand-written one would
+be for any pi installation — no maintainer approval, no rebuild.
 
-If the sidecar's source ever becomes reachable (e.g. it's vendored, or we
-gain a way to ship a first-party extension bundle with it), Option A should
-replace the correlation logic below — a same-process watcher can attribute
-file events to tool calls with zero ambiguity, because it can hook directly
-into the tool's own execution scope instead of correlating by timestamp.
-Until then, Option B is not a workaround; it's the only privileged position
-this app is in.
+**This isn't hypothetical for our vendored bundle** — I string-searched
+`src-tauri/agent-sidecar/index.cjs` directly (not just the upstream docs)
+and confirmed the runtime machinery is genuinely present in what Hypatia
+ships: an `_extensionRunner`, `session_start` events firing with every
+documented reason (`fork`, `reload`, `new`, `resume`, `startup`),
+`tool_execution_start` dispatch, and a `tool_result` handler registry
+(`handlers.get("tool_result")`) with the project-trust plumbing
+(`isProjectTrusted`, `assertProjectTrustedForWrite`, `defaultProjectTrust`)
+also present. This is buildable against what we actually ship today, not
+against a newer upstream version we don't have.
 
-## 4. Design — Rust-native workspace watcher
+**Global scope is the right target for Hypatia**, not project-local: it
+applies regardless of which folder a session is opened in, and — per the
+docs' own wording, which only attaches a trust condition to the
+project-local path — appears to sidestep the per-project trust gate
+entirely. (Flagged as a to-verify item in §7, not asserted with full
+certainty — the docs describe project-local trust explicitly but don't
+explicitly confirm global-scope has zero conditions.)
 
-### 4.1 Libraries
+**Deployment**: Hypatia's Rust layer already spawns the sidecar without
+overriding `HOME` (`spawn_sidecar` sets `SIDECAR_LOG_LEVEL`/`NODE_OPTIONS`
+env vars but no `PI_HOME`/`XDG_CONFIG_HOME`), so the sidecar reads the
+user's real `~/.pi`. On app startup, idempotently write (or update, keyed
+by a version comment in the file header) our extension to
+`~/.pi/agent/extensions/hypatia-artifact-detector.ts`. This is a small,
+one-time addition to the existing startup sequence in `lib.rs` — not a new
+subsystem.
 
-- [`notify`](https://docs.rs/notify) — cross-platform native OS filesystem
-  events (FSEvents on macOS, inotify on Linux, ReadDirectoryChangesW on
-  Windows). Not polling; the OS pushes events.
-- [`notify-debouncer-full`](https://docs.rs/notify-debouncer-full) — coalesces
-  the burst of raw OS events a single file write produces (create → several
-  modify → close-write) into one settled event per path, and absorbs the
-  platform-specific quirks (e.g. Windows' `ReadDirectoryChangesW` buffer
-  overflow behavior on very large trees) instead of us hand-rolling that.
-- [`ignore`](https://docs.rs/ignore) — the same crate ripgrep uses for
-  gitignore-aware directory walking; reused here as a filter so a `bash`
-  call that runs `npm install` doesn't flood the UI with 12,000
-  `node_modules` events. Respects `.gitignore` in the workspace root plus a
-  small built-in denylist (`.git/`, `.DS_Store`, `*.tmp`, `~*`).
+Given this, the Rust-native watcher (this doc's original §4) is demoted:
+still correct engineering, but no longer necessary for live detection.
+Preserved as **Appendix A** for the one gap that persists regardless of
+which layer does live detection: the app being fully closed (§4.6 below
+handles it more cheaply, inside the same extension, but Appendix A's
+version is kept as a documented alternative if extension loading ever
+proves unreliable in the field).
 
-None of these are new categories of dependency for this project — `notify`
-is the de facto standard, used by watch-mode tooling across the Rust
-ecosystem; this is not a novel or fragile choice.
+## 4. Design — sidecar extension (primary mechanism)
 
-### 4.2 Lifecycle — one watcher per live session, not per displayed tab
+### 4.1 The hook pair
 
-Mirrors the multi-session architecture already landed in `usePiStream`
-(`MultiStreamState` — background sessions keep streaming while another is
-displayed). The watcher must follow the same rule: **bound to the sidecar
-process's session, not to which tab the user is looking at.**
+```ts
+// ~/.pi/agent/extensions/hypatia-artifact-detector.ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import chokidar from "chokidar";
+import ignore from "ignore";
+import { readFileSync, existsSync } from "node:fs";
+import { join, relative } from "node:path";
 
-```
-new_session(cwd) spawns sidecar for session S
-  → start_workspace_watcher(session_id: S, root: cwd)
-       (mirrors: don't start it in a "factory"/setup path that might
-        run without a session — same principle pi's own docs state for
-        extension factories, applied to our Rust layer)
+export default function (pi: ExtensionAPI) {
+  const watchers = new Map<string, { close(): Promise<void>; paths: Set<string> }>();
 
-session S's sidecar exits / session explicitly closed
-  → stop_workspace_watcher(S)   // idempotent, mirrors session_shutdown
-```
+  pi.on("tool_execution_start", async (event, ctx) => {
+    if (event.toolName !== "bash") return;
 
-Multiple concurrent sessions with different `cwd`s (already supported) get
-independent watcher instances, keyed by `session_id`, in a `HashMap` on
-`AppState` next to the existing sidecar handle.
+    const ig = ignore();
+    const gitignorePath = join(ctx.cwd, ".gitignore");
+    if (existsSync(gitignorePath)) ig.add(readFileSync(gitignorePath, "utf8"));
+    ig.add([".git", ".DS_Store", "*.tmp", "~*"]); // built-in denylist
 
-### 4.3 Correlating a filesystem event to a tool call
+    const touched = new Set<string>();
+    const watcher = chokidar.watch(ctx.cwd, {
+      ignoreInitial: true,
+      // Native debounce: waits for a file to stop changing before firing
+      // "add"/"change" — the chokidar equivalent of notify-debouncer-full.
+      awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 50 },
+    });
+    watcher.on("add", (path) => {
+      const rel = relative(ctx.cwd, path);
+      if (!ig.ignores(rel)) touched.add(rel);
+    });
+    watcher.on("unlink", (path) => {
+      // Created and removed within the same call — drop it (§4.4).
+      touched.delete(relative(ctx.cwd, path));
+    });
 
-We don't get free attribution the way a same-process extension would. What
-we do get, precisely, from the existing event stream: the **exact start and
-end timestamp of every `bash` tool call** (`tool_execution_start` →
-`tool_execution_end` for a given `toolCallId`).
+    watchers.set(event.toolCallId, { close: () => watcher.close(), paths: touched });
+  });
 
-Algorithm:
+  pi.on("tool_result", async (event, ctx) => {
+    if (event.toolName !== "bash") return;
+    const entry = watchers.get(event.toolCallId);
+    if (!entry) return;
+    await entry.close();
+    watchers.delete(event.toolCallId);
+    if (entry.paths.size === 0) return; // no patch = no-op, per docs' partial-patch contract
 
-1. On `tool_execution_start` where `toolName === "bash"`, record
-   `{ toolCallId, startedAt: now() }` in an in-memory per-session map.
-2. The watcher buffers debounced fs events as they arrive, each stamped with
-   its own observed time, independent of any tool call.
-3. On `tool_execution_end` for that `toolCallId`, close the window
-   (`endedAt: now()`) and sweep the buffer: any event whose timestamp falls
-   in `[startedAt, endedAt]` (plus a small trailing grace period —
-   see 4.5) is attributed to that call.
-4. Events that don't fall inside **any** open or recently-closed window
-   (e.g. the user manually dropped a file into the folder in Finder while a
-   session was idle) are still reported, just with no `toolCallId` —
-   surfaced as a generic "workspace changed externally" signal rather than
-   attached to a specific turn.
-5. If two `bash` calls run concurrently (the SDK permits parallel tool
-   calls) and their windows overlap, an event landing in the overlap is
-   attributed to **both** — better to over-attribute in the UI (a file chip
-   appears under two tool calls) than silently drop it.
+    return {
+      details: {
+        ...(event.result?.details ?? {}),
+        detectedFiles: Array.from(entry.paths),
+      },
+    };
+  });
 
-This is the same underlying idea as "snapshot the directory before, diff
-after" — but implemented as a live watcher plus timestamp correlation, which
-is strictly better than snapshot-diffing:
-- No need to walk (`stat`) a potentially large tree twice per bash call.
-- Catches files that are created **and removed** within the same call (a
-  temp file a script cleans up) — a before/after diff would show nothing;
-  the watcher can at least record and discard it explicitly (4.6) instead
-  of an invisible pass costing a full extra directory walk for nothing.
-- Doesn't race with a second concurrent bash call touching the same tree.
-
-### 4.4 What gets filtered before it ever reaches the frontend
-
-- Anything matched by `.gitignore` in the workspace root, plus the built-in
-  denylist above — via the `ignore` crate's `WalkBuilder`/`Gitignore`
-  matcher applied to each incoming path, not by re-walking the tree.
-- Directory-only events (`mkdir` with no file inside yet) — suppressed;
-  only leaf-file create/modify/remove events are reported. A directory that
-  ends up containing reported files is implied by their paths.
-- Paths outside the watched root (a symlink escape, or a tool writing to an
-  absolute path elsewhere) — never watched in the first place, since the
-  watcher only has a handle on `cwd`. This is a feature, not a gap: it's
-  consistent with the folder-scoped sandbox model already documented in
-  `new-design/COWORK-UX.md` (§5.4, §6) — a bash call reaching outside its
-  granted folder shouldn't be silently absorbed into "artifacts," it should
-  fail the sandbox, which is a separate, existing concern.
-
-### 4.5 Debounce window
-
-`notify-debouncer-full` default settle window (a few hundred ms) is
-sufficient — matches how a script actually writes a file (open → write →
-close in a tight loop) without merging two genuinely separate files that
-happen to land close together. Use its default rather than hand-tuning
-unless real-world testing shows otherwise.
-
-### 4.6 Transient files
-
-A file created and then deleted within the same bash-call window (a script's
-own scratch file) should not be surfaced as an artifact. `notify-debouncer-
-full` naturally coalesces a rapid create+remove pair for the same path
-within its settle window into a no-op; for a slower create-then-later-remove
-within one long bash call, track path state across the window and drop any
-path whose final state (at `tool_execution_end`) is "removed."
-
-### 4.7 Emission to the frontend
-
-New Tauri event channel, additive to the existing sidecar relay — does not
-touch the pi wire-protocol passthrough at all:
-
-```rust
-// Shape mirrors the existing tag_with_session_id convention (lib.rs:566)
-#[derive(Serialize, Clone)]
-struct WorkspaceFileEvent {
-    session_id: String,
-    path: String,           // relative to the session's cwd
-    kind: FileEventKind,     // Created | Modified | Removed
-    tool_call_id: Option<String>, // None => unattributed / external change
-    at: String,              // RFC3339 timestamp
+  // Resume gap (§4.6) — no separate Rust mechanism needed.
+  pi.on("session_start", async (event, ctx) => {
+    if (event.reason !== "resume") return;
+    // one-shot mtime scan against the session's last known activity time;
+    // implementation detail left to build time, kept out of the hot path.
+  });
 }
-
-app.emit("workspace_file_event", event)?;
 ```
 
-### 4.8 Frontend integration
+Exact `ExtensionAPI` field names (`event.result`, whether `ctx` exposes a
+last-activity timestamp for the resume scan, etc.) should be checked
+against the type declarations shipped in `@earendil-works/pi-coding-agent`
+at implementation time — the docs quote the shapes but a compile-time check
+against the real `.d.ts` is cheap insurance before shipping.
 
-- New small hook, `useWorkspaceFiles(sessionId)`, listening on
-  `workspace_file_event` (same `listen()` pattern already used for `ready`
-  and `sidecar_lost` in `App.tsx`), keyed by session id so it composes with
-  the existing multi-session model instead of assuming "the" active session.
-- Events with a `toolCallId` matching a `bash` call already in
-  `ToolCallInfo[]` get attached as a lightweight `detectedFiles: string[]`
-  field on that tool call — rendered as small chips inside
-  `ActivityBlock`/`ToolCallTimeline`, visually distinct from the
-  self-reported case (e.g. a small "found" icon vs. the direct-write icon),
-  since we should never claim more certainty than we have — this is
-  *detected*, not *declared*.
-- For actually promoting a detected file into the Artifacts library
-  (`usePlaygroundArtifacts`), don't auto-promote everything a bash call
-  touches — that would spam the Artifacts panel with every intermediate
-  file. Auto-promote only file types that already make sense as artifacts
-  (the same extension allowlist the Artifacts concept implies: `.pptx`,
-  `.xlsx`, `.csv`, `.md`, `.png`/`.jpg`, source-code files), and leave
-  everything else visible only as a chip on the tool call, one click away
-  from "Add to Artifacts" if the user wants it anyway.
+### 4.2 Why this is strictly better than cross-process correlation
 
-### 4.9 Self-reporting tools (`write`/`edit`) — no watcher needed
+The original Rust design (Appendix A) had to correlate filesystem events to
+a specific bash call **after the fact**, by bucketing timestamps into
+`[startedAt, endedAt]` windows observed from a separate process — inherent
+ambiguity at call boundaries, and real complexity for overlapping parallel
+calls. Because this extension runs **in the same process, hooked directly
+to the specific `toolCallId`'s own lifecycle**, there is no ambiguity at
+all: each bash call gets its own watcher instance, keyed by its own
+`toolCallId`, opened at that call's `tool_execution_start` and closed at
+that exact call's `tool_result`. Concurrent bash calls simply get
+independent map entries — no timestamp math, no overlap bucketing.
 
-This half needs no new subsystem, ever. In `usePiStream.ts`'s existing
-`tool_execution_start`/`tool_execution_end` handling:
+### 4.3 Debounce and filtering
+
+`chokidar`'s `awaitWriteFinish` is the direct equivalent of
+`notify-debouncer-full`'s settle window — a script's open → write → close
+loop coalesces into one `add` event instead of several. The `ignore` npm
+package (same semantics as the Rust `ignore` crate used in Appendix A)
+handles `.gitignore` + the built-in denylist so `npm install` inside a bash
+call doesn't flood the UI with thousands of `node_modules` entries.
+
+### 4.4 Transient files
+
+A file created and removed within the same bash call (a script's own
+scratch file) is dropped by construction — the `unlink` handler removes it
+from the `touched` set before the call ends, so it never appears in
+`detectedFiles` at all (simpler than Appendix A's cross-process version,
+which had to reconstruct this from separately-timestamped events).
+
+### 4.5 Reaching the frontend — no new plumbing required
+
+This is the real payoff of the extension route: `detectedFiles` rides
+inside `result.details` on the bash tool's own `tool_execution_end` event —
+**the exact wire-protocol field our frontend already parses** for
+`show_artifact` (`pi-events.ts:148-152`, `usePiStream.ts:725-742`). No new
+Rust dependency, no new Tauri IPC channel, no new event type on either
+side. The only frontend change needed:
+
+```ts
+// usePiStream.ts, inside the existing tool_execution_end handling
+if (te.toolName === "bash" && Array.isArray(te.result.details?.detectedFiles)) {
+    // attach te.result.details.detectedFiles to this ToolCallInfo,
+    // rendered as "found" chips (§4.7) distinct from self-reported ones.
+}
+```
+
+### 4.6 The resume gap
+
+If the sidecar resumes a session in a later app launch
+(`session_start` reason `"resume"`), any bash-spawned files written during
+the gap had no live watcher. Handled inside the **same** extension file
+(§4.1's `session_start` hook) with a one-shot mtime scan against the
+session's last recorded activity — no separate mechanism, no Rust crates,
+no polling loop running on a timer. Runs once per resume, clearly
+distinguishable in the UI as reconciled rather than live-detected.
+
+### 4.7 Frontend rendering
+
+Same policy as originally planned: don't auto-promote every detected path
+into the Artifacts library (would spam it with intermediates). Auto-promote
+only artifact-shaped extensions (`.pptx`, `.xlsx`, `.csv`, `.md`,
+`.png`/`.jpg`, source files); everything else shows as a small "found" chip
+on the bash tool call in `ActivityBlock`/`ToolCallTimeline`, visually
+distinct from a direct `write`/`edit` chip — this is *detected*, not
+*declared*, and the UI should never claim more certainty than it has.
+
+### 4.8 Self-reporting tools (`write`/`edit`) — unchanged, no watcher needed
 
 ```ts
 if (te.toolName === "write" || te.toolName === "edit") {
     const path = typeof te.args.path === "string" ? te.args.path
         : typeof te.args.file_path === "string" ? te.args.file_path
         : undefined;
-    // path is known at tool_execution_start already — can render a
-    // "pending" artifact chip immediately, confirm on tool_execution_end
-    // when isError is false.
+    // known at tool_execution_start already — render "pending", confirm
+    // at tool_execution_end when isError is false.
 }
 ```
 
-Extend this to any future tool the same way: inspect `args` for `path` /
-`file_path` (string) or `paths` / `files` (array of strings) generically,
-rather than hardcoding tool names one at a time — this is forward-compatible
-with a `multiedit`/`apply_patch`-style tool without another round of changes.
+Generalize to any future multi-path tool (`multiedit`/`apply_patch`-style)
+by scanning `args` for `path`/`file_path` (string) or `paths`/`files`
+(array) rather than hardcoding tool names one at a time.
 
-## 5. What this deliberately does *not* do
+## 5. What this deliberately does not do
 
-- **No polling.** `notify` is push-based (native OS events); nothing here
-  loops and re-stats a directory on an interval.
-- **No parsing of chat/tool-result prose** to infer paths (the
-  `"Successfully wrote..."` string). Structured `args.path` is strictly
-  better and already available earlier in the lifecycle.
-- **No full recursive directory diff as the primary mechanism.** A watcher
-  gives named events for free; diffing is reserved as an explicit, opt-in
-  *reconciliation* step (4.10) for the one case a live watcher structurally
-  can't cover — the app being closed.
-- **No hardcoded reliance on a nonexistent `bash_execution_update` event.**
-  See §0.
+- **No polling anywhere.** Chokidar (native FS events under the hood, same
+  family as `notify`) is push-based.
+- **No parsing of chat/tool-result prose** to infer paths.
+- **No cross-process timestamp correlation** — same-process hooks make it
+  unnecessary (§4.2).
+- **No new Rust dependencies, no new Tauri IPC channel.** `detectedFiles`
+  rides the existing `result.details` pipe already proven by `show_artifact`.
+- **No reliance on a nonexistent `bash_execution_update` event** (§0).
+- **No custom event bus reaching the frontend** — not available; the
+  mutation-via-`tool_result` path is the only documented way out (§0).
 
-### 4.10 The one true gap: files created while the app was closed
+## 6. Edge cases checklist
 
-If the sidecar is resumed in a later app launch (`session_start` reason
-`"resume"`), any bash-spawned files written during the gap have no live
-watcher to have seen them. This is a real, separate, and much smaller
-problem — not a reason to fall back to diffing as the default mechanism.
-Handle it explicitly as a one-time reconciliation on session resume: list
-the workspace root, compare each file's mtime against the session's last
-recorded activity timestamp, and surface anything newer as "found on
-resume." This only runs once per resume, not on a timer, and is clearly
-labeled in the UI as reconciled rather than live-observed.
-
-## 6. Edge cases checklist (what "not hacky" has to survive)
-
-- [ ] Parallel `bash` tool calls with overlapping time windows → attribute
-      to all overlapping calls.
-- [ ] Rapid create+delete within one call (scratch files) → dropped, not
-      surfaced (§4.6).
-- [ ] `npm install` / build output inside a bash call → filtered by
-      `.gitignore` + denylist before ever reaching the frontend (§4.4).
-- [ ] Multiple concurrent sessions, different `cwd`s → independent watcher
-      per session, keyed by `session_id`, following background sessions
-      exactly like the existing `MultiStreamState` does for chat state.
-- [ ] Path outside the granted folder → never watched; sandbox violation is
-      a separate, existing concern, not folded into artifact detection.
-- [ ] App closed and reopened mid-project → one-shot mtime reconciliation
-      on resume (§4.10), not a fallback to continuous diffing.
-- [ ] Windows large-tree watcher overflow → delegated to
-      `notify-debouncer-full`'s handling rather than reimplemented.
-- [ ] A file rewritten many times by a loop in one script → debounced to a
-      single settled event (§4.5).
-- [ ] Directory-only creates (`mkdir -p`) → suppressed; only leaf files
-      reported (§4.4).
-- [ ] Future non-bash, non-self-reporting extension tool → covered
-      automatically, since the watcher observes the filesystem, not the
-      tool name; only `write`/`edit`'s fast path needs per-tool code (§4.9).
+- [x] Parallel `bash` calls — independent watcher per `toolCallId`, no
+      overlap ambiguity at all (§4.2), not just "handled by bucketing."
+- [x] Rapid create+delete (scratch files) — dropped via the `unlink`
+      handler before the call even ends (§4.4).
+- [x] `npm install` / build output — filtered by `.gitignore` + denylist
+      before ever reaching a result (§4.3).
+- [x] Multiple concurrent sessions, different `cwd`s — each session's
+      sidecar process runs its own extension instance with its own
+      `watchers` map; no cross-session leakage possible since they're
+      separate Node processes entirely.
+- [x] Path outside the granted folder — chokidar only watches `ctx.cwd`;
+      never observed, consistent with the folder-scoped sandbox model in
+      `new-design/COWORK-UX.md` §5.4/§6.
+- [ ] App closed and reopened mid-project — one-shot mtime reconciliation
+      on `session_start` reason `"resume"` (§4.6). **Needs implementation
+      detail**: confirm what timestamp `ctx` exposes to scan against.
+- [ ] Global-scope extension loading and project trust — confirmed
+      project-local requires trust; global scope's exact conditions
+      (none? Requires the `.pi` directory to already exist? First-run
+      prompt?) should be verified empirically before shipping (§7).
+- [x] A file rewritten many times by a script loop — coalesced by
+      `awaitWriteFinish` into one settled `add` event (§4.3).
+- [x] Directory-only creates (`mkdir -p`) — chokidar's `add` fires per
+      file, not per directory; only leaf files are ever collected.
+- [x] Future non-bash, non-self-reporting extension tool — not
+      automatically covered by this specific hook (it's keyed to
+      `toolName === "bash"`); would need the same `tool_execution_start`
+      /`tool_result` pair added for that tool name too. Only `write`/
+      `edit`'s fast path is name-agnostic by design (§4.8).
 
 ## 7. Validation plan before shipping
 
-1. Unit-test the correlation sweep (§4.3) with synthetic timestamps: single
-   call, overlapping calls, event with no matching window.
-2. Manual test: ask the agent to run a script that writes a `.pptx` via a
-   Python library (the exact case from the original report) and confirm a
-   chip appears on that `bash` tool call within one debounce window of the
-   file landing on disk.
-3. Manual test: `npm install` inside the workspace during a session — verify
-   zero UI noise.
-4. Manual test: two sessions open concurrently, different folders, agent
-   writes files in both at once — verify no cross-attribution.
-5. Kill the app mid-session, relaunch, resume — verify the reconciliation
-   pass (§4.10) surfaces the file and is visually distinguished from a
+1. Confirm the exact `ExtensionAPI` and `tool_result` event field names
+   against the `.d.ts` shipped with `@earendil-works/pi-coding-agent` in
+   our vendored sidecar (the string search in §3 confirms the *symbols*
+   exist; it doesn't confirm exact field names match the docs verbatim).
+2. Empirically confirm global-scope (`~/.pi/agent/extensions/`) loads
+   without a project-trust prompt, on a machine with no prior `~/.pi`
+   directory at all (cold-start case).
+3. Unit-test the `ignore` filtering against a real `.gitignore` from this
+   repo plus the built-in denylist.
+4. Manual test: ask the agent to run a script that writes a `.pptx` via a
+   Python library (the original motivating case) — confirm a "found" chip
+   appears on that `bash` tool call.
+5. Manual test: `npm install` inside the workspace during a session —
+   verify zero UI noise.
+6. Manual test: two sessions open concurrently, different folders, agent
+   writes files in both at once — verify no cross-attribution (should be
+   structurally impossible per §6, but verify).
+7. Kill the app mid-session, relaunch, resume — verify the reconciliation
+   pass (§4.6) surfaces the file and is visually distinguished from a
    live-detected one.
+8. Confirm the extension file self-updates cleanly across Hypatia app
+   updates (version comment check on startup) without leaving stale
+   duplicate watchers from a previous version's code still resident in a
+   long-running sidecar process that hasn't restarted.
+
+---
+
+## Appendix A — Rust-native watcher (fallback option)
+
+Kept from this doc's first draft. No longer the primary recommendation
+(§3), but valid if extension loading ever proves unreliable in the field
+(antivirus quarantining a dropped `.ts` file, a future sidecar update
+tightening global-scope trust, etc.) — implementable entirely within this
+repo's own Rust layer, which we fully control.
+
+### A.1 Libraries
+
+- [`notify`](https://docs.rs/notify) — cross-platform native OS filesystem
+  events (FSEvents/inotify/ReadDirectoryChangesW).
+- [`notify-debouncer-full`](https://docs.rs/notify-debouncer-full) —
+  coalesces raw OS event bursts into settled per-path events, absorbing
+  platform quirks (e.g. Windows' overflow behavior on very large trees).
+- [`ignore`](https://docs.rs/ignore) — gitignore-aware filtering (same
+  crate ripgrep uses).
+
+### A.2 Lifecycle
+
+One watcher per live session (not per displayed tab — mirrors
+`MultiStreamState`'s background-session model), keyed by `session_id`,
+started when `new_session(cwd)` spawns a sidecar, stopped when that
+session's sidecar exits.
+
+### A.3 Correlation (the part the extension route avoids)
+
+Record `{ toolCallId, startedAt }` on `tool_execution_start` for `bash`
+calls (relayed through the existing `app.emit` pipe). Buffer debounced fs
+events with their own observed timestamps. On `tool_execution_end`, sweep
+the buffer for events inside `[startedAt, endedAt]` (plus a small trailing
+grace period) and attribute them to that call. Events matching no window
+are reported unattributed (a generic "workspace changed externally"
+signal). Overlapping concurrent windows attribute to all overlapping calls
+rather than dropping the event.
+
+### A.4 Emission
+
+New Tauri channel, additive to the existing sidecar relay:
+
+```rust
+#[derive(Serialize, Clone)]
+struct WorkspaceFileEvent {
+    session_id: String,
+    path: String,
+    kind: FileEventKind, // Created | Modified | Removed
+    tool_call_id: Option<String>,
+    at: String,
+}
+app.emit("workspace_file_event", event)?;
+```
+
+Frontend: a `useWorkspaceFiles(sessionId)` hook listening on
+`workspace_file_event`, same `listen()` pattern as `ready`/`sidecar_lost`
+in `App.tsx`.
+
+### A.5 Why the extension route is preferred over this
+
+Same-process hooks make correlation exact instead of timestamp-bucketed
+(§4.2), and reuse the existing `result.details` pipe instead of adding a
+new Rust dependency + new IPC channel + new frontend hook. Appendix A
+remains useful only for defense-in-depth or as a total fallback if the
+extension mechanism turns out not to work reliably in practice.
