@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypatia V3 — Plan Mode</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ink: '#0d0d0f', surface: '#ffffff', stone: '#fafafa',
+                        border: '#e7e7e9', accent: '#0051a5', gold: '#e8a821', success: '#10a37f'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        serif: ['Playfair Display', 'Georgia', 'serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    borderRadius: { panel: '22px' }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        html, body { height: 100%; }
+        body { font-family: 'Inter', sans-serif; overflow: hidden; background-color: #fbfbfc; color: #0d0d0f; }
+        .editorial-text { font-family: 'Playfair Display', serif; letter-spacing: -0.02em; }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.62);
+            backdrop-filter: blur(28px) saturate(1.4);
+            -webkit-backdrop-filter: blur(28px) saturate(1.4);
+            border: 1px solid rgba(231, 231, 233, 0.9);
+            box-shadow: 0 12px 40px rgba(13, 13, 15, 0.05);
+        }
+        .subtle-shadow { box-shadow: 0 4px 20px rgba(13, 13, 15, 0.04); }
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        input::placeholder, textarea::placeholder { color: #a3a3a8; font-weight: 300; }
+
+        .grain {
+            position: fixed; inset: 0; z-index: 60; pointer-events: none;
+            opacity: 0.035; mix-blend-mode: multiply;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        .glitch-text { position: relative; }
+        .glitch-text::before, .glitch-text::after {
+            content: attr(data-text); position: absolute; inset: 0; opacity: 0; pointer-events: none; white-space: nowrap;
+        }
+        .glitch-text.glitching::before { opacity: 0.85; color: #0051a5; animation: glitch-slice-a 0.24s steps(2) both; }
+        .glitch-text.glitching::after  { opacity: 0.85; color: #e8a821; animation: glitch-slice-b 0.24s steps(2) both; }
+        @keyframes glitch-slice-a {
+            0%   { clip-path: inset(8% 0 62% 0);  transform: translate(-4px, 1px); }
+            50%  { clip-path: inset(42% 0 28% 0); transform: translate(3px, -1px); }
+            100% { clip-path: inset(70% 0 4% 0);  transform: translate(-2px, 0); }
+        }
+        @keyframes glitch-slice-b {
+            0%   { clip-path: inset(58% 0 16% 0); transform: translate(4px, -1px); }
+            50%  { clip-path: inset(12% 0 66% 0); transform: translate(-3px, 1px); }
+            100% { clip-path: inset(36% 0 42% 0); transform: translate(2px, 0); }
+        }
+
+        .type-cursor {
+            display: inline-block; width: 0.55ch; height: 1em; background: #0051a5;
+            vertical-align: text-bottom; margin-left: 1px; animation: blink 0.9s steps(1) infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        .shimmer-text {
+            background: linear-gradient(90deg, #a3a3a8 30%, #0d0d0f 50%, #a3a3a8 70%);
+            background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+            animation: shimmer 1.8s linear infinite;
+        }
+        @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+        .hairline-top { border-top: 1px solid rgba(13,13,15,0.06); }
+
+        .session-active { position: relative; }
+        .session-active::before {
+            content: ''; position: absolute; left: -1px; top: 10px; bottom: 10px; width: 2px; border-radius: 2px;
+            background: linear-gradient(to bottom, #e8a821, #0051a5);
+        }
+
+        /* ── Plan mode: the form ── */
+        .plan-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-family: 'JetBrains Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em;
+            color: #0051a5; background: rgba(0,81,165,0.06); border: 1px solid rgba(0,81,165,0.18);
+            border-radius: 8px; padding: 4px 10px;
+        }
+
+        .option-pill {
+            display: block; width: 100%; text-align: left; cursor: pointer;
+            border: 1px solid #e7e7e9; border-radius: 14px; padding: 12px 16px;
+            transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+            background: #ffffff;
+        }
+        .option-pill:hover { border-color: #0d0d0f; transform: translateY(-1px); }
+        .option-pill.selected { border-color: #0d0d0f; background: #0d0d0f; }
+        .option-pill.selected .opt-num { background: #ffffff; color: #0d0d0f; }
+        .option-pill.selected .opt-title { color: #ffffff; }
+        .option-pill.selected .opt-desc { color: rgba(255,255,255,0.6); }
+        .opt-num {
+            display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+            border-radius: 9999px; background: #fafafa; border: 1px solid #e7e7e9;
+            font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #71717a; flex-shrink: 0;
+        }
+        .opt-title { font-size: 13.5px; font-weight: 500; color: #0d0d0f; }
+        .opt-desc { font-size: 11.5px; font-weight: 300; color: #71717a; margin-top: 2px; }
+
+        .question-card { transition: opacity 0.4s ease; }
+        .question-card.answered .option-pill:not(.selected) { display: none; }
+        .question-card.answered .free-text-row,
+        .question-card.answered .chat-about-row,
+        .question-card.answered .kbd-hint { display: none; }
+        .question-card.answered .opt-num { display: none; }
+        .question-card.answered .option-pill.selected {
+            border-color: #e7e7e9; background: #fafafa; padding: 8px 14px; border-radius: 10px;
+        }
+        .question-card.answered .option-pill.selected .opt-title { color: #0d0d0f; font-size: 12.5px; }
+        .question-card.answered .option-pill.selected .opt-desc { display: none; }
+
+        .progress-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+        .progress-dot {
+            width: 14px; height: 14px; border-radius: 9999px; border: 1.5px solid #d4d4d8; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .progress-item.done .progress-dot { border-color: #10a37f; background: #10a37f; }
+        .progress-item.done { color: #0d0d0f; }
+        .progress-item:not(.done) { color: #a3a3a8; }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { animation: none !important; transition: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="grain"></div>
+    <canvas id="gl" class="fixed inset-0 z-40 pointer-events-none"></canvas>
+
+    <div class="flex w-full h-screen">
+
+        <!-- ============================================= -->
+        <!-- SIDEBAR : SESSIONS (unchanged from chat-v3)   -->
+        <!-- ============================================= -->
+        <div class="w-72 bg-stone/90 backdrop-blur border-r border-border h-full flex flex-col pt-7 pb-5 px-4 z-30 shrink-0">
+            <div class="flex items-center justify-between px-2 mb-8">
+                <div class="flex items-center space-x-3">
+                    <div class="w-5 h-5 bg-ink rounded-full"></div>
+                    <span class="font-semibold text-base tracking-tight">Hypatia</span>
+                </div>
+                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Cowork</span>
+            </div>
+
+            <button class="w-full bg-surface border border-border hover:border-ink text-ink rounded-xl py-2.5 flex items-center justify-center space-x-2 transition subtle-shadow mb-5">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span class="font-medium text-sm">New session</span>
+            </button>
+
+            <div class="relative mb-6">
+                <i data-lucide="search" class="w-3.5 h-3.5 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+                <input type="text" placeholder="Search conversations…" class="w-full bg-white border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-ink transition">
+            </div>
+
+            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] px-2 mb-3">Sessions · 24</div>
+
+            <div class="flex-1 overflow-y-auto space-y-1 -mx-1 px-1">
+                <div class="session-active bg-white border border-border rounded-xl px-4 py-3 cursor-pointer subtle-shadow">
+                    <div class="text-sm font-medium text-ink truncate">Login flow redesign</div>
+                    <div class="flex items-center justify-between mt-1">
+                        <span class="text-xs text-gray-400 font-light truncate">Planning · 3 decisions</span>
+                        <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">Now</span>
+                    </div>
+                </div>
+                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition group">
+                    <div class="text-sm font-medium text-gray-600 group-hover:text-ink truncate">RBC landing page build</div>
+                    <div class="flex items-center justify-between mt-1">
+                        <span class="text-xs text-gray-400 font-light truncate">4 artifacts</span>
+                        <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">Jul 30</span>
+                    </div>
+                </div>
+                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition group">
+                    <div class="text-sm font-medium text-gray-600 group-hover:text-ink truncate">Q3 earnings call prep</div>
+                    <div class="flex items-center justify-between mt-1">
+                        <span class="text-xs text-gray-400 font-light truncate">Transcript recap</span>
+                        <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">Jul 28</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-auto pt-5 space-y-1">
+                <a href="#" class="flex items-center space-x-3 px-3 py-2 text-gray-500 hover:text-ink transition text-sm font-medium rounded-lg hover:bg-white">
+                    <i data-lucide="settings" class="w-4 h-4"></i><span>Settings</span>
+                </a>
+                <div class="flex items-center space-x-3 px-3 py-2 cursor-pointer group">
+                    <div class="w-7 h-7 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-medium text-[11px]">SM</div>
+                    <div class="text-sm font-medium text-ink group-hover:underline truncate">Simo M.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================= -->
+        <!-- MAIN : PLAN-MODE THREAD                       -->
+        <!-- ============================================= -->
+        <div class="flex-1 flex h-full relative min-w-0">
+
+            <div class="flex-1 flex flex-col min-w-0">
+
+                <!-- Header -->
+                <div class="flex items-center justify-between px-10 py-5 border-b border-border bg-white/70 backdrop-blur-md z-20">
+                    <div>
+                        <div class="flex items-center space-x-3 mb-1.5">
+                            <span class="plan-badge"><i data-lucide="route" class="w-3 h-3"></i>Plan mode</span>
+                        </div>
+                        <h1 id="thread-title" data-text="Login flow redesign" class="glitch-text editorial-text text-xl text-ink">Login flow redesign</h1>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <div class="flex items-center space-x-2 bg-stone border border-border rounded-lg px-3 py-1.5">
+                            <i data-lucide="cpu" class="w-3.5 h-3.5 text-gray-500"></i>
+                            <span class="text-xs font-medium text-gray-600">Claude Sonnet 5</span>
+                        </div>
+                        <div id="engine-pill" class="flex items-center space-x-1.5 text-[11px] font-mono text-accent bg-stone border border-border rounded-lg px-3 py-2">
+                            <div class="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></div><span>PLANNING</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Thread -->
+                <div id="thread" class="flex-1 overflow-y-auto min-h-0">
+                    <div class="max-w-2xl mx-auto px-8 py-10 space-y-8" id="messages">
+
+                        <!-- USER TURN -->
+                        <div class="msg flex flex-col items-end">
+                            <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] mb-2 pr-1">You · 2:04 PM</div>
+                            <div class="glass-panel rounded-panel rounded-tr-md px-6 py-4 max-w-xl">
+                                <p class="text-[15px] leading-relaxed">I want to redesign the login flow to support SSO and passkeys. Plan it out before you touch anything.</p>
+                            </div>
+                        </div>
+
+                        <!-- ASSISTANT INTRO -->
+                        <div class="msg">
+                            <div class="flex items-center space-x-3 mb-3">
+                                <div class="w-7 h-7 orb-slot shrink-0"></div>
+                                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Hypatia · Plan mode</span>
+                            </div>
+                            <div class="pl-10">
+                                <p class="text-[15px] font-light leading-relaxed text-ink max-w-xl">
+                                    Read <code class="font-mono text-[13px] bg-stone px-1.5 py-0.5 rounded">auth/</code>, <code class="font-mono text-[13px] bg-stone px-1.5 py-0.5 rounded">middleware/session.ts</code>, and the last two incident postmortems. Three decisions shape the plan — answering them first keeps the diff small.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- QUESTION 1 -->
+                        <div class="msg question-card" id="q1" data-decided="false">
+                            <div class="flex items-center space-x-3 mb-3">
+                                <div class="w-7 h-7 orb-slot shrink-0"></div>
+                                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Decision 1 of 3</span>
+                            </div>
+                            <div class="pl-10">
+                                <p class="text-[15px] font-medium text-ink mb-3">Where should SSO enter the flow?</p>
+                                <div class="space-y-2" data-question="entry">
+                                    <button class="option-pill" data-value="replace" type="button">
+                                        <div class="flex items-start space-x-3">
+                                            <span class="opt-num">1</span>
+                                            <div>
+                                                <div class="opt-title">Replace the password field entirely</div>
+                                                <div class="opt-desc">Bold move — fewer paths to test, but no way back for stragglers.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                    <button class="option-pill" data-value="beside" type="button">
+                                        <div class="flex items-start space-x-3">
+                                            <span class="opt-num">2</span>
+                                            <div>
+                                                <div class="opt-title">Add SSO beside the password field</div>
+                                                <div class="opt-desc">Safer — both paths live, more surface area to maintain.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                    <button class="option-pill" data-value="staged" type="button">
+                                        <div class="flex items-start space-x-3">
+                                            <span class="opt-num">3</span>
+                                            <div>
+                                                <div class="opt-title">SSO for new users, password grandfathered</div>
+                                                <div class="opt-desc">Staged — existing users are untouched until a later migration.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                </div>
+                                <div class="free-text-row flex items-center space-x-2 mt-3">
+                                    <input type="text" placeholder="Or type your own answer…" class="flex-1 bg-stone border border-border rounded-xl px-3.5 py-2 text-[13px] focus:outline-none focus:border-ink transition">
+                                    <button class="text-xs font-medium text-white bg-ink hover:bg-gray-800 px-3.5 py-2 rounded-xl transition free-text-submit">Send</button>
+                                </div>
+                                <div class="chat-about-row mt-2">
+                                    <button class="text-[11px] text-gray-400 hover:text-ink transition underline decoration-dotted">Chat about this instead</button>
+                                </div>
+                                <div class="kbd-hint text-[10px] font-mono text-gray-400 mt-3">Enter to select · ↑↓ to navigate · Esc to skip</div>
+                            </div>
+                        </div>
+
+                        <!-- QUESTION 2 (revealed after Q1) -->
+                        <div class="msg question-card hidden" id="q2" data-decided="false">
+                            <div class="flex items-center space-x-3 mb-3">
+                                <div class="w-7 h-7 orb-slot shrink-0"></div>
+                                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Decision 2 of 3</span>
+                            </div>
+                            <div class="pl-10">
+                                <p class="text-[15px] font-medium text-ink mb-3">How should passkeys roll out?</p>
+                                <div class="space-y-2" data-question="passkeys">
+                                    <button class="option-pill" data-value="optin" type="button">
+                                        <div class="flex items-start space-x-3">
+                                            <span class="opt-num">1</span>
+                                            <div>
+                                                <div class="opt-title">Opt-in from account settings</div>
+                                                <div class="opt-desc">Slow and safe — no one is surprised by it.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                    <button class="option-pill" data-value="prompted" type="button">
+                                        <div class="flex items-start space-x-3">
+                                            <span class="opt-num">2</span>
+                                            <div>
+                                                <div class="opt-title">Prompted at next login, for everyone</div>
+                                                <div class="opt-desc">Fast adoption — expect some support tickets in week one.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                    <button class="option-pill" data-value="sso-only" type="button">
+                                        <div class="flex items-start space-x-3">
+                                            <span class="opt-num">3</span>
+                                            <div>
+                                                <div class="opt-title">SSO users first, everyone else later</div>
+                                                <div class="opt-desc">Matches a staged entry point — smaller blast radius.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                </div>
+                                <div class="free-text-row flex items-center space-x-2 mt-3">
+                                    <input type="text" placeholder="Or type your own answer…" class="flex-1 bg-stone border border-border rounded-xl px-3.5 py-2 text-[13px] focus:outline-none focus:border-ink transition">
+                                    <button class="text-xs font-medium text-white bg-ink hover:bg-gray-800 px-3.5 py-2 rounded-xl transition free-text-submit">Send</button>
+                                </div>
+                                <div class="chat-about-row mt-2">
+                                    <button class="text-[11px] text-gray-400 hover:text-ink transition underline decoration-dotted">Chat about this instead</button>
+                                </div>
+                                <div class="kbd-hint text-[10px] font-mono text-gray-400 mt-3">Enter to select · ↑↓ to navigate · Esc to skip</div>
+                            </div>
+                        </div>
+
+                        <!-- QUESTION 3 (revealed after Q2) -->
+                        <div class="msg question-card hidden" id="q3" data-decided="false">
+                            <div class="flex items-center space-x-3 mb-3">
+                                <div class="w-7 h-7 orb-slot shrink-0"></div>
+                                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Decision 3 of 3</span>
+                            </div>
+                            <div class="pl-10">
+                                <p class="text-[15px] font-medium text-ink mb-3">Keep the legacy flow reachable?</p>
+                                <div class="space-y-2" data-question="legacy">
+                                    <button class="option-pill" data-value="permanent" type="button">
+                                        <div class="flex items-start space-x-3">
+                                            <span class="opt-num">1</span>
+                                            <div>
+                                                <div class="opt-title">Yes, behind a "having trouble?" link</div>
+                                                <div class="opt-desc">Permanent fallback — small maintenance tax forever.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                    <button class="option-pill" data-value="90days" type="button">
+                                        <div class="flex items-start space-x-3">
+                                            <span class="opt-num">2</span>
+                                            <div>
+                                                <div class="opt-title">Yes, for 90 days, then removed</div>
+                                                <div class="opt-desc">A dated fallback — needs a calendar reminder to actually remove it.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                    <button class="option-pill" data-value="cutover" type="button">
+                                        <div class="flex items-start space-x-3">
+                                            <span class="opt-num">3</span>
+                                            <div>
+                                                <div class="opt-title">No — cut over immediately</div>
+                                                <div class="opt-desc">Cleanest codebase, least forgiving if something's wrong.</div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                </div>
+                                <div class="free-text-row flex items-center space-x-2 mt-3">
+                                    <input type="text" placeholder="Or type your own answer…" class="flex-1 bg-stone border border-border rounded-xl px-3.5 py-2 text-[13px] focus:outline-none focus:border-ink transition">
+                                    <button class="text-xs font-medium text-white bg-ink hover:bg-gray-800 px-3.5 py-2 rounded-xl transition free-text-submit">Send</button>
+                                </div>
+                                <div class="chat-about-row mt-2">
+                                    <button class="text-[11px] text-gray-400 hover:text-ink transition underline decoration-dotted">Chat about this instead</button>
+                                </div>
+                                <div class="kbd-hint text-[10px] font-mono text-gray-400 mt-3">Enter to select · ↑↓ to navigate · Esc to skip</div>
+                            </div>
+                        </div>
+
+                        <!-- FINAL PLAN CARD (revealed after Q3) -->
+                        <div class="msg hidden" id="final-plan">
+                            <div class="flex items-center space-x-3 mb-3">
+                                <div class="w-7 h-7 orb-slot shrink-0"></div>
+                                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Hypatia · Plan ready</span>
+                            </div>
+                            <div class="pl-10">
+                                <div class="bg-surface border border-border rounded-panel p-5 subtle-shadow max-w-xl">
+                                    <p class="editorial-text text-lg text-ink mb-4">The plan.</p>
+                                    <div class="space-y-3" id="plan-steps"></div>
+                                    <div class="flex items-center justify-between mt-5 pt-4 border-t border-border/60">
+                                        <button id="edit-answers" class="text-xs font-medium text-gray-500 hover:text-ink px-3 py-2 rounded-lg border border-border bg-white transition">Edit answers</button>
+                                        <button id="approve-plan" class="text-xs font-medium text-white bg-ink hover:bg-gray-800 px-4 py-2 rounded-lg transition">Approve & start</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <!-- Composer -->
+                <div class="px-8 pb-6 pt-2 z-20">
+                    <div class="max-w-2xl mx-auto">
+                        <div id="composer" class="glass-panel rounded-panel p-3 transition-all">
+                            <textarea id="composer-input" rows="1" class="w-full px-4 pt-3 pb-2 text-[15px] text-ink focus:outline-none resize-none bg-transparent placeholder-gray-400 font-light max-h-40" placeholder="Answer inline above, or add context here…"></textarea>
+                            <div class="flex items-center justify-between px-2 pb-1 hairline-top pt-2.5">
+                                <div class="flex items-center space-x-2">
+                                    <button class="p-2 text-gray-400 hover:text-ink transition rounded-lg hover:bg-stone"><i data-lucide="paperclip" class="w-4 h-4"></i></button>
+                                    <span class="flex items-center space-x-1.5 text-xs font-medium text-gray-400 bg-stone px-3 py-1.5 rounded-lg border border-border">
+                                        <i data-lucide="route" class="w-3.5 h-3.5"></i><span>Plan mode</span>
+                                    </span>
+                                </div>
+                                <div class="flex items-center space-x-3">
+                                    <div id="composer-orb-slot" class="w-7 h-7 orb-slot"></div>
+                                    <button id="send-btn" class="p-2 bg-ink text-white rounded-lg hover:bg-gray-800 transition shadow-sm">
+                                        <i data-lucide="arrow-up" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right rail: plan progress -->
+            <div class="w-72 border-l border-border bg-stone/60 backdrop-blur h-full flex flex-col shrink-0">
+                <div class="px-5 pt-6 pb-4">
+                    <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Plan progress</span>
+                </div>
+                <div class="px-5 space-y-3.5" id="progress-list">
+                    <div class="progress-item" data-for="entry"><div class="progress-dot"></div><span>Entry point</span></div>
+                    <div class="progress-item" data-for="passkeys"><div class="progress-dot"></div><span>Passkey rollout</span></div>
+                    <div class="progress-item" data-for="legacy"><div class="progress-dot"></div><span>Legacy fallback</span></div>
+                </div>
+                <div class="px-5 pt-6">
+                    <div class="h-px bg-border mb-4"></div>
+                    <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]" id="decided-count">0 / 3 decided</span>
+                    <div class="h-1 bg-border rounded-full mt-2.5 overflow-hidden">
+                        <div id="progress-bar" class="h-full rounded-full" style="width: 0%; background: linear-gradient(to right, #e8a821, #0051a5);"></div>
+                    </div>
+                </div>
+                <div class="flex-1"></div>
+                <div class="px-5 pb-6 text-[11px] text-gray-400 font-light leading-relaxed">
+                    Hypatia won't touch a file until the plan below is approved.
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+lucide.createIcons();
+
+// =====================================================================
+// WEBGL — THE PULSE (identical to chat-v3.html's chat presence)
+// =====================================================================
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 9);
+
+const orbGroup = new THREE.Group();
+const PULSE = { bars: 96, r0: 0.85 };
+const pulseParams = { chaos: 0.08, speed: 0.9, energy: 0, glitch: 0 };
+
+const pulseGeo = new THREE.BufferGeometry();
+pulseGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PULSE.bars * 2 * 3), 3));
+{
+    const colors = new Float32Array(PULSE.bars * 2 * 3);
+    const cBlue = new THREE.Color('#0051a5');
+    const cMid  = new THREE.Color('#1a66ff');
+    const cGold = new THREE.Color('#e8a821');
+    for (let i = 0; i < PULSE.bars; i++) {
+        const c = i % 16 === 0 ? cGold : (i % 2 === 0 ? cBlue : cMid);
+        for (let k = 0; k < 2; k++) {
+            colors[(i * 2 + k) * 3]     = c.r;
+            colors[(i * 2 + k) * 3 + 1] = c.g;
+            colors[(i * 2 + k) * 3 + 2] = c.b;
+        }
+    }
+    pulseGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+}
+const pulseLines = new THREE.LineSegments(pulseGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9 }));
+orbGroup.add(pulseLines);
+const pulseInner = new THREE.Mesh(
+    new THREE.TorusGeometry(PULSE.r0 - 0.04, 0.01, 8, 128),
+    new THREE.MeshBasicMaterial({ color: 0x0d0d0f, transparent: true, opacity: 0.28 })
+);
+orbGroup.add(pulseInner);
+
+function pulseUpdate(t) {
+    const p = pulseGeo.attributes.position.array;
+    for (let i = 0; i < PULSE.bars; i++) {
+        const a = (i / PULSE.bars) * Math.PI * 2;
+        const wave = Math.sin(a * 3 + t * pulseParams.speed) * 0.5 + 0.5;
+        const jitter = Math.sin(a * 17.0 + t * pulseParams.speed * 7.3) * pulseParams.chaos;
+        let h = 0.06 + wave * 0.16 + Math.abs(jitter) * 0.6;
+        if (pulseParams.glitch > 0.001) {
+            const g = Math.sin(i * 91.7 + Math.floor(t * 24) * 7.3) * 43758.5453;
+            const frac = g - Math.floor(g);
+            if (frac > 0.8) h += pulseParams.glitch * 0.5;
+            else if (frac < 0.12) h *= 1.0 - pulseParams.glitch;
+        }
+        const cx = Math.cos(a), cy = Math.sin(a);
+        p[(i * 2) * 3]     = cx * PULSE.r0;
+        p[(i * 2) * 3 + 1] = cy * PULSE.r0;
+        p[(i * 2) * 3 + 2] = 0;
+        p[(i * 2 + 1) * 3]     = cx * (PULSE.r0 + h);
+        p[(i * 2 + 1) * 3 + 1] = cy * (PULSE.r0 + h);
+        p[(i * 2 + 1) * 3 + 2] = 0;
+    }
+    pulseGeo.attributes.position.needsUpdate = true;
+    orbGroup.rotation.z = t * 0.05;
+    pulseInner.material.opacity = 0.2 + pulseParams.energy * 0.25;
+}
+scene.add(orbGroup);
+
+let anchorEl = document.getElementById('composer-orb-slot');
+let anchorScaleBoost = 1;
+function worldPerPixel() {
+    const worldH = 2 * Math.tan((camera.fov * Math.PI / 180) / 2) * camera.position.z;
+    return worldH / window.innerHeight;
+}
+function anchorTarget() {
+    const r = anchorEl.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const nx = (cx / window.innerWidth) * 2 - 1;
+    const ny = -(cy / window.innerHeight) * 2 + 1;
+    const v = new THREE.Vector3(nx, ny, 0.5).unproject(camera);
+    const dir = v.sub(camera.position).normalize();
+    const t = -camera.position.z / dir.z;
+    const pos = camera.position.clone().add(dir.multiplyScalar(t));
+    const scale = (r.height * anchorScaleBoost * worldPerPixel()) / 2.6;
+    return { pos, scale };
+}
+function setAnchor(el, boost = 1) { anchorEl = el; anchorScaleBoost = boost; }
+
+const MODES = {
+    rest:     { chaos: 0.08, speed: 0.9, energy: 0.0 },
+    thinking: { chaos: 0.50, speed: 3.2, energy: 1.0 },
+    speaking: { chaos: 0.22, speed: 1.8, energy: 0.5 },
+    settled:  { chaos: 0.05, speed: 0.7, energy: 0.15 },
+};
+let currentMode = 'rest';
+function setMode(mode) {
+    if (currentMode === mode) return;
+    currentMode = mode;
+    const m = MODES[mode];
+    const speedScale = REDUCED_MOTION ? 0.25 : 1;
+    gsap.to(pulseParams, { chaos: m.chaos, speed: m.speed * speedScale, energy: m.energy, duration: 1.2, ease: 'power2.inOut' });
+}
+function glitchBurst(strength = 1) {
+    if (REDUCED_MOTION) return;
+    gsap.fromTo(pulseParams, { glitch: strength }, { glitch: 0, duration: 0.32, ease: 'steps(4)' });
+    document.querySelectorAll('.glitch-text').forEach(el => {
+        el.classList.add('glitching');
+        setTimeout(() => el.classList.remove('glitching'), 260);
+    });
+}
+
+const clock = new THREE.Clock();
+let rafId = null;
+function frame() {
+    rafId = requestAnimationFrame(frame);
+    const t = clock.getElapsedTime();
+    pulseUpdate(t);
+    const target = anchorTarget();
+    const chase = currentMode === 'thinking' ? 0.10 : 0.14;
+    orbGroup.position.lerp(target.pos, chase);
+    const s = orbGroup.scale.x + (target.scale - orbGroup.scale.x) * chase;
+    orbGroup.scale.setScalar(s);
+    renderer.render(scene, camera);
+}
+frame();
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(rafId); rafId = null; }
+    else if (rafId === null) { clock.getDelta(); frame(); }
+});
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+{
+    const t = anchorTarget();
+    orbGroup.position.copy(t.pos);
+    orbGroup.scale.setScalar(t.scale);
+}
+
+// No opacity-from-0 entrance on first paint — content should be fully
+// visible immediately, not dependent on an animation completing (or being
+// caught mid-fade in a screenshot). Only dynamically-revealed cards (new
+// questions, the final plan) animate in later, via decide()/revealFinalPlan().
+
+// =====================================================================
+// PLAN-MODE FORM LOGIC
+// =====================================================================
+const thread = document.getElementById('thread');
+function scrollDown() { thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' }); }
+
+const ANSWER_LABELS = {
+    entry: {
+        replace: 'Replace the password field entirely',
+        beside: 'Add SSO beside the password field',
+        staged: 'SSO for new users, password grandfathered',
+    },
+    passkeys: {
+        optin: 'Opt-in from account settings',
+        prompted: 'Prompted at next login, for everyone',
+        'sso-only': 'SSO users first, everyone else later',
+    },
+    legacy: {
+        permanent: 'Yes, behind a "having trouble?" link',
+        '90days': 'Yes, for 90 days, then removed',
+        cutover: 'No — cut over immediately',
+    },
+};
+const answers = {};
+const QUESTION_ORDER = ['q1', 'q2', 'q3'];
+const NEXT = { q1: 'q2', q2: 'q3', q3: null };
+
+function decide(cardId, key, value, label) {
+    answers[key] = { value, label };
+    const card = document.getElementById(cardId);
+    card.dataset.decided = 'true';
+    card.classList.add('answered');
+    card.querySelectorAll('.option-pill').forEach(p => p.classList.toggle('selected', p.dataset.value === value));
+
+    document.querySelector(`.progress-item[data-for="${key}"]`).classList.add('done');
+    updateProgress();
+
+    glitchBurst(0.6);
+    setMode('thinking');
+    // Briefly dock the Pulse at this card's avatar slot while "thinking"
+    setAnchor(card.querySelector('.orb-slot'), 1.1);
+
+    setTimeout(() => {
+        const nextId = NEXT[cardId];
+        if (nextId) {
+            const nextCard = document.getElementById(nextId);
+            nextCard.classList.remove('hidden');
+            gsap.from(nextCard, { opacity: 0, y: 16, duration: 0.6, ease: 'power3.out' });
+            setMode('rest');
+            setAnchor(nextCard.querySelector('.orb-slot'), 1);
+            scrollDown();
+        } else {
+            revealFinalPlan();
+        }
+    }, 850);
+}
+
+document.querySelectorAll('.question-card').forEach(card => {
+    const cardId = card.id;
+    const questionKey = card.querySelector('[data-question]').dataset.question;
+    card.querySelectorAll('.option-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            decide(cardId, questionKey, pill.dataset.value, pill.querySelector('.opt-title').textContent);
+        });
+    });
+    const submitBtn = card.querySelector('.free-text-submit');
+    const input = card.querySelector('.free-text-row input');
+    submitBtn.addEventListener('click', () => {
+        const text = input.value.trim();
+        if (!text) return;
+        decide(cardId, questionKey, 'custom', text);
+    });
+});
+
+function updateProgress() {
+    const decidedCount = Object.keys(answers).length;
+    document.getElementById('decided-count').textContent = `${decidedCount} / 3 decided`;
+    document.getElementById('progress-bar').style.width = `${(decidedCount / 3) * 100}%`;
+}
+
+function revealFinalPlan() {
+    glitchBurst(0.9);
+    setMode('thinking');
+    setAnchor(document.querySelector('#final-plan .orb-slot'), 1.1);
+    document.getElementById('engine-pill').innerHTML =
+        '<div class="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></div><span class="text-accent">SYNTHESIZING</span>';
+
+    const stepsHtml = buildPlanSteps();
+    setTimeout(() => {
+        document.getElementById('plan-steps').innerHTML = stepsHtml;
+        const finalCard = document.getElementById('final-plan');
+        finalCard.classList.remove('hidden');
+        gsap.from(finalCard, { opacity: 0, y: 18, duration: 0.7, ease: 'power3.out' });
+        setMode('rest');
+        scrollDown();
+        document.getElementById('engine-pill').innerHTML =
+            '<div class="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></div><span class="text-accent">AWAITING APPROVAL</span>';
+    }, 1400);
+}
+
+function buildPlanSteps() {
+    const steps = [
+        `Scaffold the SSO entry point — <span class="text-gray-500">${answers.entry.label.toLowerCase()}</span>`,
+        `Wire passkey enrollment — <span class="text-gray-500">${answers.passkeys.label.toLowerCase()}</span>`,
+        `Handle the legacy path — <span class="text-gray-500">${answers.legacy.label.toLowerCase()}</span>`,
+        'Update session middleware for the new credential types',
+        'Ship behind a flag, staged rollout to 5% of traffic first',
+    ];
+    return steps.map((s, i) => `
+        <div class="flex items-start space-x-3">
+            <span class="w-5 h-5 rounded-full bg-stone border border-border flex items-center justify-center text-[9px] font-mono text-gray-500 shrink-0 mt-0.5">${i + 1}</span>
+            <span class="text-sm text-ink leading-relaxed">${s}</span>
+        </div>`).join('');
+}
+
+document.getElementById('approve-plan').addEventListener('click', function approve() {
+    this.outerHTML = '<span class="text-xs font-mono text-success uppercase tracking-[0.15em]">✓ Approved · starting</span>';
+    document.getElementById('engine-pill').innerHTML =
+        '<div class="w-1.5 h-1.5 bg-success rounded-full"></div><span>IMPLEMENTING</span>';
+    glitchBurst(0.7);
+    setMode('speaking');
+    setAnchor(document.getElementById('composer-orb-slot'));
+    setTimeout(() => setMode('settled'), 1200);
+});
+
+document.getElementById('edit-answers').addEventListener('click', () => {
+    location.reload();
+});
+
+// Composer autosize (context-add only in plan mode — inline cards do the work)
+const composerInput = document.getElementById('composer-input');
+composerInput.addEventListener('input', () => {
+    composerInput.style.height = 'auto';
+    composerInput.style.height = Math.min(composerInput.scrollHeight, 160) + 'px';
+});
+</script>
+</body>
+</html>

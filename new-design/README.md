@@ -18,6 +18,7 @@ Handoff package for integrating the V3 design language into the Hypatia frontend
 | `reference/presence-shapes.html` | Form studies (8 shapes). Context for why Pulse won for chat. |
 | `reference/artifacts-v3.html` | Artifacts library + slide-over viewer (Phase 6). |
 | `reference/cowork-v3.html` | Workspace-first UX (Cowork model): Projects hub + folder-bound session. Toggle "UX notes" for annotations. |
+| `reference/plan-v3.html` | Plan Mode (Phase 8): inline decision forms in the chat feed, synthesized into an approvable plan card. |
 | `COWORK-UX.md` | **Written spec** for the workspace UX — research findings, IA, screen specs, states, integration mapping. |
 
 ## Validated decisions (do not relitigate)
