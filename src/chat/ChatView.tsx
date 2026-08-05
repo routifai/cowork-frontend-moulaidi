@@ -2,6 +2,8 @@ import { ChatMessageItem } from "@/components/ChatMessage";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { InThreadFind } from "@/components/InThreadFind";
 import { MessageInput } from "@/components/MessageInput";
+import { PlanModeQuestionCard } from "@/components/PlanModeQuestionCard";
+import type { ExtensionUiRequest, ExtensionUiResponse } from "@/hooks/useExtensionUi";
 import { usePresence } from "@/hooks/usePresence";
 import type { ChatMessage, ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
@@ -40,6 +42,17 @@ interface ChatViewProps {
 	onEditQueue?: () => void;
 	/** Opens the playground panel on a specific artifact id, from a chat message's show_artifact chip. */
 	onOpenArtifact?: (id: string) => void;
+	/** `@narumitw/pi-plan-mode`'s own status ("plan active" | "plan ready" | "plan saved" |
+	 * "plan implementing" | undefined when off) — see `useExtensionUi.ts`. Drives the
+	 * composer's plan-mode toggle button. */
+	planModeStatus?: string;
+	/** Sends a plan-mode command (`/plan`, `/plan exit`, `/plan implement`) silently —
+	 * never shown as a chat bubble, unlike `onSend`. */
+	onPlanModeAction?: (command: string) => void;
+	/** A pending `plan_mode_question` select/editor dialog, rendered inline
+	 * (see `PlanModeQuestionCard.tsx`) instead of `App.tsx`'s popup. */
+	planQuestionRequest?: ExtensionUiRequest;
+	onRespondPlanQuestion?: (response: ExtensionUiResponse) => void;
 }
 
 export function ChatView({
@@ -64,6 +77,10 @@ export function ChatView({
 	queue,
 	onEditQueue,
 	onOpenArtifact,
+	planModeStatus,
+	onPlanModeAction,
+	planQuestionRequest,
+	onRespondPlanQuestion,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -336,6 +353,12 @@ export function ChatView({
 								</div>
 							</div>
 						)}
+						{planQuestionRequest && onRespondPlanQuestion && (
+							<PlanModeQuestionCard
+								request={planQuestionRequest}
+								onRespond={onRespondPlanQuestion}
+							/>
+						)}
 						{/* Thinking dock: the Pulse flies here (64px) while the agent
 						    works before any visible output. Unmounts on first token —
 						    the presence then chases the composer slot again. */}
@@ -386,6 +409,8 @@ export function ChatView({
 					onModelSelect={onModelSelect}
 					modelSelectorOpen={modelSelectorOpen}
 					onModelSelectorOpenChange={onModelSelectorOpenChange}
+					planModeStatus={planModeStatus}
+					onPlanModeAction={onPlanModeAction}
 					draft={draft}
 					commands={commands}
 					onRunCommand={onRunCommand}

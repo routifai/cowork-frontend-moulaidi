@@ -78,7 +78,7 @@ export type ToolPhase =
 	| { type: "error"; toolName: string; message: string };
 
 export type StreamAction =
-	| { type: "START_STREAM"; prompt: string }
+	| { type: "START_STREAM"; prompt: string; silent?: boolean }
 	| { type: "TEXT_DELTA"; delta: string }
 	| { type: "THINKING_DELTA"; delta: string }
 	| { type: "MODEL_INFO"; model: string; provider: string }
@@ -132,7 +132,21 @@ export type StreamAction =
 	 * its steer/follow-up kind, then opens a fresh assistant bubble so the
 	 * transcript reads: assistant-part-1 → [Steering …] → assistant-part-2.
 	 */
-	| { type: "USER_MESSAGE_STARTED"; content: string };
+	| { type: "USER_MESSAGE_STARTED"; content: string }
+	/**
+	 * A `role: "custom"` message an extension pushed via `pi.sendMessage(...,
+	 * {display: true})` — e.g. `@narumitw/pi-plan-mode`'s proposed-plan text.
+	 * Arrives as a `message_start` the same way delivered steer/follow-up
+	 * messages do, but the SDK's `role` union includes "custom" as a
+	 * distinct value the reducer previously had no case for at all, so these
+	 * messages were silently dropped — the model saw its own proposed plan
+	 * in session history, but the frontend never rendered it (see bug: plan
+	 * mode completing with a full plan document that never appeared in chat).
+	 * Rendered as an assistant bubble (full markdown, unlike the tiny
+	 * "system" pill) since the content is prose meant to be read, not a
+	 * one-line status.
+	 */
+	| { type: "CUSTOM_MESSAGE"; content: string };
 
 export const INITIAL_STATE: StreamState = {
 	messages: [],
@@ -178,14 +192,22 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 				...INITIAL_STATE,
 				isRunning: true,
 				status: "thinking",
-				messages: [
-					{
-						id: crypto.randomUUID(),
-						role: "user",
-						content: action.prompt,
-						timestamp: Date.now(),
-					},
-				],
+				// `silent` (e.g. the plan-mode toggle's /plan, /plan exit, /plan
+				// implement) skips seeding the raw command text as a visible user
+				// bubble — a non-technical user should never see a slash command.
+				// Any real resulting turn (like pi-plan-mode's own injected
+				// "Implement this proposed plan now" message) still streams in
+				// normally once the backend emits it.
+				messages: action.silent
+					? []
+					: [
+							{
+								id: crypto.randomUUID(),
+								role: "user",
+								content: action.prompt,
+								timestamp: Date.now(),
+							},
+						],
 				streamingMessage: {
 					id: crypto.randomUUID(),
 					role: "assistant",
@@ -491,6 +513,44 @@ export function streamReducer(state: StreamState, action: StreamAction): StreamS
 			};
 		}
 
+		case "CUSTOM_MESSAGE": {
+			// Finalize any in-progress assistant work so the custom message
+			// (e.g. the proposed plan) lands after it, not before — same
+			// ordering rule as USER_MESSAGE_STARTED.
+			const prev = state.streamingMessage;
+			const prevIsEmpty =
+				!prev ||
+				(!prev.content && !prev.thinking && (!prev.toolCalls || prev.toolCalls.length === 0));
+			const finalized: ChatMessage[] =
+				prev && !prevIsEmpty ? [{ ...prev, isStreaming: false }] : [];
+			return {
+				...state,
+				messages: [
+					...state.messages,
+					...finalized,
+					{
+						id: crypto.randomUUID(),
+						role: "assistant",
+						content: action.content,
+						timestamp: Date.now(),
+					},
+				],
+				// Fresh bubble for whatever the assistant does next (e.g. resuming
+				// after the tool call that triggered this custom message).
+				streamingMessage: {
+					id: crypto.randomUUID(),
+					role: "assistant",
+					content: "",
+					thinking: "",
+					isStreaming: true,
+					toolCalls: [],
+					timestamp: Date.now(),
+				},
+				streamSegments: [],
+				status: "thinking",
+			};
+		}
+
 		case "RESET":
 			return INITIAL_STATE;
 
@@ -612,200 +672,219 @@ export function usePiStream(options?: UsePiStreamOptions) {
 		onShowArtifactRef.current = options?.onShowArtifact;
 	}, [options?.onShowArtifact]);
 
-	const startStream = useCallback(async (sessionId: string, text: string) => {
-		const d = (action: StreamAction) => dispatch({ ...action, sessionId });
-		const setPhase = (phase: ToolPhase | null) =>
-			setToolPhases((prev) => ({ ...prev, [sessionId]: phase }));
+	const startStream = useCallback(
+		async (sessionId: string, text: string, opts?: { silent?: boolean }) => {
+			const d = (action: StreamAction) => dispatch({ ...action, sessionId });
+			const setPhase = (phase: ToolPhase | null) =>
+				setToolPhases((prev) => ({ ...prev, [sessionId]: phase }));
 
-		d({ type: "START_STREAM", prompt: text });
+			d({ type: "START_STREAM", prompt: text, silent: opts?.silent });
 
-		const channel = new Channel<PiEvent>();
-		channel.onmessage = (event: PiEvent) => {
-			try {
-				switch (event.type) {
-					case "message_update": {
-						const msgEvent = event as PiMessageUpdateEvent;
-						const ame = msgEvent.assistantMessageEvent;
+			const channel = new Channel<PiEvent>();
+			channel.onmessage = (event: PiEvent) => {
+				try {
+					switch (event.type) {
+						case "message_update": {
+							const msgEvent = event as PiMessageUpdateEvent;
+							const ame = msgEvent.assistantMessageEvent;
 
-						if (msgEvent.message?.model || msgEvent.message?.provider) {
-							d({
-								type: "MODEL_INFO",
-								model: msgEvent.message.model || "",
-								provider: msgEvent.message.provider || "",
-							});
-						}
-
-						switch (ame.type) {
-							case "thinking_delta":
-								d({ type: "THINKING_DELTA", delta: ame.delta });
-								break;
-							case "text_delta":
-								d({ type: "TEXT_DELTA", delta: ame.delta });
-								break;
-							/**
-							 * text_end — pi emits this when a streaming content block
-							 * completes. The `content` field has the authoritative final
-							 * text, correcting any delta accumulation errors (#307).
-							 */
-							case "text_end":
-								if (ame.content) {
-									d({ type: "TEXT_END", content: ame.content });
-								}
-								break;
-							case "toolcall_end": {
-								const tc = ame.toolCall;
+							if (msgEvent.message?.model || msgEvent.message?.provider) {
 								d({
-									type: "TOOL_CALL_START",
-									toolCall: extractToolCallInfo(tc),
+									type: "MODEL_INFO",
+									model: msgEvent.message.model || "",
+									provider: msgEvent.message.provider || "",
 								});
-								break;
 							}
-							case "error":
-								// Forward the actual error reason or message, not
-								// a generic placeholder. Provider 400/500 errors
-								// carry the API response in `reason` or `message`,
-								// not just "aborted".
-								d({
-									type: "STREAM_ERROR",
-									error:
-										(ame as unknown as { message?: string }).message || ame.reason || "API error",
-								});
-								break;
+
+							switch (ame.type) {
+								case "thinking_delta":
+									d({ type: "THINKING_DELTA", delta: ame.delta });
+									break;
+								case "text_delta":
+									d({ type: "TEXT_DELTA", delta: ame.delta });
+									break;
+								/**
+								 * text_end — pi emits this when a streaming content block
+								 * completes. The `content` field has the authoritative final
+								 * text, correcting any delta accumulation errors (#307).
+								 */
+								case "text_end":
+									if (ame.content) {
+										d({ type: "TEXT_END", content: ame.content });
+									}
+									break;
+								case "toolcall_end": {
+									const tc = ame.toolCall;
+									d({
+										type: "TOOL_CALL_START",
+										toolCall: extractToolCallInfo(tc),
+									});
+									break;
+								}
+								case "error":
+									// Forward the actual error reason or message, not
+									// a generic placeholder. Provider 400/500 errors
+									// carry the API response in `reason` or `message`,
+									// not just "aborted".
+									d({
+										type: "STREAM_ERROR",
+										error:
+											(ame as unknown as { message?: string }).message || ame.reason || "API error",
+									});
+									break;
+							}
+							break;
 						}
-						break;
-					}
 
-					case "message_start": {
-						if (event.message?.role === "assistant") {
-							d({ type: "TURN_RESET" });
-						} else if (event.message?.role === "user") {
-							// SDK-injected user message: the prompt echo (skipped once)
-							// or a delivered steer/follow-up. Extract its text.
-							const content = (event.message.content || [])
-								.filter((c) => c.type === "text")
-								.map((c) => (c as { text: string }).text)
-								.join("");
-							d({ type: "USER_MESSAGE_STARTED", content });
+						case "message_start": {
+							if (event.message?.role === "assistant") {
+								d({ type: "TURN_RESET" });
+							} else if (event.message?.role === "user") {
+								// SDK-injected user message: the prompt echo (skipped once)
+								// or a delivered steer/follow-up. Extract its text.
+								const content = (event.message.content || [])
+									.filter((c) => c.type === "text")
+									.map((c) => (c as { text: string }).text)
+									.join("");
+								d({ type: "USER_MESSAGE_STARTED", content });
+							} else if (event.message?.role === "custom" && event.message.display === true) {
+								// An extension's `pi.sendMessage(..., {display: true})` (e.g.
+								// pi-plan-mode's proposed plan). `content` may arrive as a raw
+								// string or a content-block array depending on what the
+								// extension passed — handle both.
+								const raw = event.message.content as unknown;
+								const content =
+									typeof raw === "string"
+										? raw
+										: Array.isArray(raw)
+											? raw
+													.filter((c) => c && typeof c === "object" && c.type === "text")
+													.map((c) => (c as { text: string }).text)
+													.join("")
+											: "";
+								if (content) d({ type: "CUSTOM_MESSAGE", content });
+							}
+							break;
 						}
-						break;
-					}
 
-					case "tool_execution_start": {
-						const te = event as PiToolExecutionStartEvent;
-						setPhase({
-							type: "calling",
-							toolName: te.toolName,
-							args: te.args as Record<string, unknown>,
-						});
-						break;
-					}
-
-					case "tool_execution_update": {
-						const te = event as PiToolExecutionUpdateEvent;
-						const partialText = (te.partialResult?.content || []).map((c) => c.text).join("");
-						d({
-							type: "TOOL_CALL_UPDATE",
-							id: te.toolCallId,
-							result: partialText,
-							status: "running",
-						});
-						d({
-							type: "TOOL_PARTIAL_OUTPUT",
-							id: te.toolCallId,
-							partialOutput: partialText,
-						});
-						setPhase({
-							type: "executing",
-							toolName: te.toolName,
-							partialOutput: partialText,
-						});
-						break;
-					}
-
-					case "tool_execution_end": {
-						const te = event as PiToolExecutionEndEvent;
-						d({
-							type: "TOOL_CALL_UPDATE",
-							id: te.toolCallId,
-							result: (te.result?.content || []).map((c) => c.text).join(""),
-							status: te.isError ? "error" : "completed",
-							isError: te.isError,
-							details: te.result?.details as Record<string, unknown> | undefined,
-						});
-						setPhase(
-							te.isError
-								? { type: "error", toolName: te.toolName, message: "Tool failed" }
-								: { type: "done", toolName: te.toolName },
-						);
-						if (
-							!te.isError &&
-							te.toolName === "show_artifact" &&
-							isPlaygroundArtifactPayload(te.result?.details)
-						) {
-							onShowArtifactRef.current?.(te.result.details);
+						case "tool_execution_start": {
+							const te = event as PiToolExecutionStartEvent;
+							setPhase({
+								type: "calling",
+								toolName: te.toolName,
+								args: te.args as Record<string, unknown>,
+							});
+							break;
 						}
-						break;
-					}
 
-					case "message_end": {
-						d({ type: "MESSAGE_END" });
-						break;
-					}
+						case "tool_execution_update": {
+							const te = event as PiToolExecutionUpdateEvent;
+							const partialText = (te.partialResult?.content || []).map((c) => c.text).join("");
+							d({
+								type: "TOOL_CALL_UPDATE",
+								id: te.toolCallId,
+								result: partialText,
+								status: "running",
+							});
+							d({
+								type: "TOOL_PARTIAL_OUTPUT",
+								id: te.toolCallId,
+								partialOutput: partialText,
+							});
+							setPhase({
+								type: "executing",
+								toolName: te.toolName,
+								partialOutput: partialText,
+							});
+							break;
+						}
 
-					case "agent_end":
-					case "done":
-						d({ type: "STREAM_COMPLETE" });
-						break;
+						case "tool_execution_end": {
+							const te = event as PiToolExecutionEndEvent;
+							d({
+								type: "TOOL_CALL_UPDATE",
+								id: te.toolCallId,
+								result: (te.result?.content || []).map((c) => c.text).join(""),
+								status: te.isError ? "error" : "completed",
+								isError: te.isError,
+								details: te.result?.details as Record<string, unknown> | undefined,
+							});
+							setPhase(
+								te.isError
+									? { type: "error", toolName: te.toolName, message: "Tool failed" }
+									: { type: "done", toolName: te.toolName },
+							);
+							if (
+								!te.isError &&
+								te.toolName === "show_artifact" &&
+								isPlaygroundArtifactPayload(te.result?.details)
+							) {
+								onShowArtifactRef.current?.(te.result.details);
+							}
+							break;
+						}
 
-					case "error": {
-						const errEvent = event as PiErrorEvent;
-						// Prefer pi's structured payload (v0.3.0+) over the bare
-						// message: surface the provider and a retry hint so the
-						// ErrorBanner is actionable instead of a generic string.
-						const base = errEvent.message || errEvent.details || "Unknown error";
-						const where = errEvent.provider
-							? ` (${errEvent.provider}${errEvent.model ? `/${errEvent.model}` : ""})`
-							: "";
-						const hint = errEvent.retryable ? " — retrying may help" : "";
-						d({
-							type: "STREAM_ERROR",
-							error: `${base}${where}${hint}`,
-						});
-						break;
-					}
+						case "message_end": {
+							d({ type: "MESSAGE_END" });
+							break;
+						}
 
-					// Pi SDK session-level queue snapshot (#201 PR 3). Arrives
-					// on every steer/follow-up enqueue, dequeue, and clear.
-					// The Rust layer also emits this globally (see
-					// `listen("queue_update")` below) so the queue stays in
-					// sync even when no prompt channel is active.
-					case "queue_update": {
-						const qe = event as unknown as {
-							steering?: string[];
-							followUp?: string[];
-						};
-						d({
-							type: "QUEUE_UPDATE",
-							steering: qe.steering ?? [],
-							followUp: qe.followUp ?? [],
-						});
-						break;
+						case "agent_end":
+						case "done":
+							d({ type: "STREAM_COMPLETE" });
+							break;
+
+						case "error": {
+							const errEvent = event as PiErrorEvent;
+							// Prefer pi's structured payload (v0.3.0+) over the bare
+							// message: surface the provider and a retry hint so the
+							// ErrorBanner is actionable instead of a generic string.
+							const base = errEvent.message || errEvent.details || "Unknown error";
+							const where = errEvent.provider
+								? ` (${errEvent.provider}${errEvent.model ? `/${errEvent.model}` : ""})`
+								: "";
+							const hint = errEvent.retryable ? " — retrying may help" : "";
+							d({
+								type: "STREAM_ERROR",
+								error: `${base}${where}${hint}`,
+							});
+							break;
+						}
+
+						// Pi SDK session-level queue snapshot (#201 PR 3). Arrives
+						// on every steer/follow-up enqueue, dequeue, and clear.
+						// The Rust layer also emits this globally (see
+						// `listen("queue_update")` below) so the queue stays in
+						// sync even when no prompt channel is active.
+						case "queue_update": {
+							const qe = event as unknown as {
+								steering?: string[];
+								followUp?: string[];
+							};
+							d({
+								type: "QUEUE_UPDATE",
+								steering: qe.steering ?? [],
+								followUp: qe.followUp ?? [],
+							});
+							break;
+						}
 					}
+				} catch (err) {
+					log.error("[cowork] Error processing event:", err, event);
 				}
-			} catch (err) {
-				log.error("[cowork] Error processing event:", err, event);
-			}
-		};
+			};
 
-		try {
-			await invoke("send_prompt", { text, sessionId, ch: channel });
-		} catch (err) {
-			d({
-				type: "STREAM_ERROR",
-				error: err instanceof Error ? err.message : String(err),
-			});
-		}
-	}, []);
+			try {
+				await invoke("send_prompt", { text, sessionId, ch: channel });
+			} catch (err) {
+				d({
+					type: "STREAM_ERROR",
+					error: err instanceof Error ? err.message : String(err),
+				});
+			}
+		},
+		[],
+	);
 
 	const abortStream = useCallback(async (sessionId: string) => {
 		dispatch({ type: "ABORT_STREAM", sessionId });

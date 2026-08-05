@@ -20,6 +20,62 @@ const tool = (id: string, name: string): ToolCallInfo => ({
 	status: "running",
 });
 
+describe("streamReducer — silent START_STREAM (plan-mode toggle)", () => {
+	it("does not seed a visible user bubble when silent", () => {
+		const state = run([{ type: "START_STREAM", prompt: "/plan", silent: true }]);
+		expect(state.messages).toEqual([]);
+		expect(state.isRunning).toBe(true);
+	});
+
+	it("still seeds the bubble when silent is omitted (default behavior unchanged)", () => {
+		const state = run([{ type: "START_STREAM", prompt: "/plan" }]);
+		expect(state.messages).toHaveLength(1);
+		expect(state.messages[0]).toMatchObject({ role: "user", content: "/plan" });
+	});
+
+	it("resolves cleanly (isRunning false, no ghost messages) when a silent command produces no real turn", () => {
+		const state = run([
+			{ type: "START_STREAM", prompt: "/plan", silent: true },
+			{ type: "STREAM_COMPLETE" },
+		]);
+		expect(state.isRunning).toBe(false);
+		expect(state.messages).toEqual([]);
+		expect(state.streamingMessage).toBeNull();
+	});
+});
+
+describe("streamReducer — CUSTOM_MESSAGE (extension-pushed display:true content)", () => {
+	it("renders the custom message as an assistant bubble", () => {
+		const state = run([
+			{ type: "START_STREAM", prompt: "build me a plan" },
+			{ type: "CUSTOM_MESSAGE", content: "**Proposed Plan**\n\nStep 1..." },
+		]);
+		const last = state.messages[state.messages.length - 1];
+		expect(last).toMatchObject({ role: "assistant", content: "**Proposed Plan**\n\nStep 1..." });
+	});
+
+	it("finalizes prior in-progress assistant work before inserting the custom message", () => {
+		const state = run([
+			{ type: "START_STREAM", prompt: "build me a plan" },
+			{ type: "TEXT_DELTA", delta: "Let me draft that." },
+			{ type: "CUSTOM_MESSAGE", content: "**Proposed Plan**\n\nStep 1..." },
+		]);
+		// user prompt + finalized "Let me draft that." + the custom message
+		expect(state.messages).toHaveLength(3);
+		expect(state.messages[1]).toMatchObject({ role: "assistant", content: "Let me draft that." });
+		expect(state.messages[2]).toMatchObject({ content: "**Proposed Plan**\n\nStep 1..." });
+	});
+
+	it("opens a fresh streaming bubble afterward so the turn can continue", () => {
+		const state = run([
+			{ type: "START_STREAM", prompt: "x" },
+			{ type: "CUSTOM_MESSAGE", content: "plan text" },
+		]);
+		expect(state.streamingMessage?.isStreaming).toBe(true);
+		expect(state.streamingMessage?.content).toBe("");
+	});
+});
+
 describe("streamReducer — single bubble per agent run", () => {
 	it("clubs a multi-step run (think→tool→think→answer) into ONE assistant message", () => {
 		const state = run([
@@ -519,7 +575,11 @@ describe("multiStreamReducer — per-session routing (docs/plans/multi-session-c
 			prompt: "task B",
 			sessionId: "b",
 		});
-		state = multiStreamReducer(state, { type: "TEXT_DELTA", delta: "working on A", sessionId: "a" });
+		state = multiStreamReducer(state, {
+			type: "TEXT_DELTA",
+			delta: "working on A",
+			sessionId: "a",
+		});
 		state = multiStreamReducer(state, {
 			type: "TEXT_DELTA",
 			delta: "working on B",
@@ -541,7 +601,10 @@ describe("multiStreamReducer — per-session routing (docs/plans/multi-session-c
 
 	it("FORGET_SESSION on an id that was never tracked is a safe no-op, returning the same state reference", () => {
 		const before: MultiStreamState = { a: INITIAL_STATE };
-		const after = multiStreamReducer(before, { type: "FORGET_SESSION", sessionId: "never-existed" });
+		const after = multiStreamReducer(before, {
+			type: "FORGET_SESSION",
+			sessionId: "never-existed",
+		});
 		expect(after).toBe(before);
 	});
 });

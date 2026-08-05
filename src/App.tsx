@@ -63,6 +63,7 @@ function App() {
 		followUpStream,
 		clearQueue,
 		forgetSession,
+		toolPhases,
 	} = usePiStream({ onShowArtifact: playground.upsert });
 
 	// Custom instructions are no longer prepended to messages here. They live in
@@ -77,7 +78,13 @@ function App() {
 	// Renders whatever pi extension confirm/select/input/editor prompt is
 	// pending (e.g. a permission gate around bash/edit/write) — without this,
 	// the extension's ui.* call never resolves and the tool call hangs forever.
-	const { current: extensionUiRequest, respond: respondExtensionUi } = useExtensionUi();
+	const {
+		current: extensionUiRequest,
+		respond: respondExtensionUi,
+		statuses: extensionStatuses,
+	} = useExtensionUi();
+	// pi-plan-mode's own status key — see useExtensionUi.ts's doc comment.
+	const planModeStatus = extensionStatuses["plan-mode"];
 	// Whether the agent sidecar has finished booting. Auth is handled invisibly
 	// (an embedded API key, no user-facing onboarding) — this splash purely
 	// reflects sidecar readiness. In remote/browser mode (no Tauri) the server
@@ -115,6 +122,18 @@ function App() {
 	// docs/plans/multi-session-concurrency.md), so a backgrounded session's
 	// live progress survives being navigated away from and back to.
 	const streamState = (activeSessionFile && streams[activeSessionFile]) || INITIAL_STATE;
+	// A pending select/editor dialog belongs to pi-plan-mode's own
+	// `plan_mode_question` tool iff that's the tool `toolPhases` says is
+	// currently calling/executing for this session — see
+	// `PlanModeQuestionCard.tsx`'s doc comment for why this is a heuristic
+	// (no explicit "which extension" tag exists on the wire) and why it's
+	// reliable in practice (one dialog pending at a time, FIFO).
+	const activeToolPhase = activeSessionFile ? toolPhases[activeSessionFile] : undefined;
+	const isPlanModeQuestionPending =
+		activeToolPhase?.toolName === "plan_mode_question" &&
+		(activeToolPhase.type === "calling" || activeToolPhase.type === "executing") &&
+		(extensionUiRequest?.method === "select" || extensionUiRequest?.method === "editor");
+	const planQuestionRequest = isPlanModeQuestionPending ? extensionUiRequest : undefined;
 	// Draft prompt pushed into the composer (e.g. when a template is clicked).
 	// The bumping `nonce` lets the same prompt be re-applied on repeated clicks.
 	const [composerDraft, setComposerDraft] = useState<{ text: string; nonce: number }>();
@@ -385,6 +404,57 @@ function App() {
 		},
 		[activeSessionFile, startStream, models, activeModelId, workspaceCwd],
 	);
+
+	/**
+	 * Plan-mode composer toggle (`Plan` / `Planning…` / `Approve Plan`). Sends
+	 * the underlying `/plan`, `/plan exit`, or `/plan implement` command
+	 * silently — a non-technical user should never see a raw slash command in
+	 * the transcript. Any real resulting agent activity (the proposed plan
+	 * itself, or the model's work once approved) still streams in normally;
+	 * only the command text that triggered it is hidden. Reuses `handleSend`'s
+	 * session-bootstrap so the toggle works even before a session exists yet.
+	 */
+	const handlePlanModeAction = useCallback(
+		async (command: string) => {
+			let sessionFile = activeSessionFile;
+			if (!sessionFile) {
+				try {
+					const res = await invoke<{ file?: string; cwd?: string }>("new_session", {});
+					if (res && typeof res.cwd === "string") setWorkspaceCwd(res.cwd);
+					sessionFile = res?.file ?? `session-${Date.now()}.jsonl`;
+				} catch {
+					sessionFile = `session-${Date.now()}.jsonl`;
+				}
+				setActiveSessionFile(sessionFile);
+			}
+			startStream(sessionFile, command, { silent: true });
+		},
+		[activeSessionFile, startStream],
+	);
+
+	/**
+	 * Auto-reveal the proposed plan the moment it's ready. `pi-plan-mode`'s
+	 * own `onAgentSettled` hook only auto-displays plan text for its legacy
+	 * text-marker completion path — the real `plan_mode_complete` TOOL path
+	 * (what the model actually calls) instead pops a "ready plan" menu and
+	 * only sends the plan text to chat if the user explicitly runs `/plan
+	 * show`. Without this, `planModeStatus` flips to "plan ready" (the
+	 * composer's "Approve Plan" button appears) but nothing the user can
+	 * read ever arrives — exactly the bug reported: the model insisted the
+	 * plan was "right there" (it was, in the tool result, which isn't
+	 * rendered as a chat message) while the transcript stayed empty. Silently
+	 * issuing `/plan show` here forces the SAME `pi.sendMessage(...,
+	 * {display:true})` path `/plan show` always uses, which the
+	 * `CUSTOM_MESSAGE` reducer case now renders as a real chat bubble.
+	 */
+	const prevPlanModeStatusRef = useRef<string | undefined>(undefined);
+	useEffect(() => {
+		const prev = prevPlanModeStatusRef.current;
+		prevPlanModeStatusRef.current = planModeStatus;
+		if (planModeStatus === "plan ready" && prev !== "plan ready") {
+			handlePlanModeAction("/plan show");
+		}
+	}, [planModeStatus, handlePlanModeAction]);
 
 	/**
 	 * Issue #201 PR 3 — Ctrl+↑ in the composer fires this. We atomically
@@ -751,7 +821,10 @@ function App() {
 			<HelpDialog open={showHelp} commands={BUILTIN_COMMANDS} onClose={() => setShowHelp(false)} />
 
 			{/* Pending pi extension confirm/select/input/editor request, if any */}
-			<ExtensionUiDialog request={extensionUiRequest} onRespond={respondExtensionUi} />
+			<ExtensionUiDialog
+				request={isPlanModeQuestionPending ? null : extensionUiRequest}
+				onRespond={respondExtensionUi}
+			/>
 
 			{/* Sidebar — desktop: visible, mobile: slide-over */}
 			{!hideChrome && (
@@ -829,6 +902,10 @@ function App() {
 										isRunning={streamState.isRunning}
 										error={streamState.error}
 										onSend={handleSend}
+										planModeStatus={planModeStatus}
+										onPlanModeAction={handlePlanModeAction}
+										planQuestionRequest={planQuestionRequest}
+										onRespondPlanQuestion={respondExtensionUi}
 										onAbort={() => activeSessionFile && abortStream(activeSessionFile)}
 										/* Issue #201, PR 2 — mid-turn message queuing. */
 										onSteer={(text) => activeSessionFile && steerStream(activeSessionFile, text)}

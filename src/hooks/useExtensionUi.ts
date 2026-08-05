@@ -13,8 +13,14 @@ import { useCallback, useEffect, useState } from "react";
  * This hook listens for `ui_request`, queues the interactive ones (select /
  * confirm / input / editor) so they show one at a time, and exposes a
  * `respond()` callback that resolves the active request. Fire-and-forget
- * methods (notify / setStatus / setWidget / setTitle / set_editor_text) are
- * acknowledged here but not rendered (no response is expected for them).
+ * methods (notify / setWidget / setTitle / set_editor_text) are acknowledged
+ * here but not rendered (no response is expected for them). `setStatus` is
+ * the one exception: its (key, text) pairs are kept in a `statuses` map so
+ * callers can read an extension's status out-of-band — e.g. `@narumitw/pi-plan-mode`
+ * reports its own on/off/ready state under the `"plan-mode"` key (values:
+ * "plan active" | "plan ready" | "plan saved" | "plan implementing" |
+ * undefined when off), which is how the composer's plan-mode toggle knows
+ * its current state without polling or parsing notify text.
  */
 
 export type ExtensionUiMethod = "select" | "confirm" | "input" | "editor";
@@ -30,6 +36,8 @@ export interface ExtensionUiRequest {
 	prefill?: string;
 	timeout?: number;
 	notifyType?: "info" | "warning" | "error";
+	statusKey?: string;
+	statusText?: string;
 }
 
 export interface ExtensionUiResponse {
@@ -47,6 +55,8 @@ function isDialogRequest(req: ExtensionUiRequest): boolean {
 export function useExtensionUi() {
 	// FIFO queue of pending interactive dialogs. The head is the one shown.
 	const [queue, setQueue] = useState<ExtensionUiRequest[]>([]);
+	// Latest setStatus value per key — e.g. statuses["plan-mode"].
+	const [statuses, setStatuses] = useState<Record<string, string | undefined>>({});
 
 	// Drop a request from the queue by id (used by ui_cancel and by respond()).
 	const removeFromQueue = useCallback((id: string) => {
@@ -63,9 +73,11 @@ export function useExtensionUi() {
 				if (!req || typeof req.id !== "string") return;
 				if (isDialogRequest(req)) {
 					setQueue((prev) => [...prev, req]);
+				} else if (req.method === "setStatus" && typeof req.statusKey === "string") {
+					setStatuses((prev) => ({ ...prev, [req.statusKey as string]: req.statusText }));
 				}
-				// Fire-and-forget methods (notify, setStatus, setWidget, …) carry
-				// no dialog and expect no response — nothing to render.
+				// Other fire-and-forget methods (notify, setWidget, …) carry no
+				// dialog and expect no response — nothing to render.
 			});
 			// The sidecar resolved a dialog itself (timeout/abort) → dismiss it.
 			const uCancel = await listen<{ id?: string }>("ui_cancel", (event) => {
@@ -108,5 +120,5 @@ export function useExtensionUi() {
 		[current],
 	);
 
-	return { current, respond };
+	return { current, respond, statuses };
 }

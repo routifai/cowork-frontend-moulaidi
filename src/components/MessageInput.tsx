@@ -2,7 +2,7 @@ import { usePasteDetection } from "@/hooks/usePasteDetection";
 import { trackEvent } from "@/lib/telemetry";
 import type { ModelInfo } from "@/types";
 import type { Command } from "@/types/commands";
-import { ArrowUp, Mic, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, ClipboardList, Mic, Paperclip, Square, X } from "lucide-react";
 import {
 	forwardRef,
 	useCallback,
@@ -81,10 +81,81 @@ interface MessageInputProps {
 	 * nothing accidentally fires.
 	 */
 	onEditQueue?: () => void;
+	/**
+	 * `@narumitw/pi-plan-mode`'s own status (from `useExtensionUi.ts`'s
+	 * `statuses["plan-mode"]`): "plan active" | "plan ready" | "plan saved" |
+	 * "plan implementing" | undefined when off. Drives {@link planModeButtonConfig}.
+	 */
+	planModeStatus?: string;
+	/** Sends a plan-mode command silently (no visible chat bubble) — see {@link planModeButtonConfig}. */
+	onPlanModeAction?: (command: string) => void;
 }
 
 export interface MessageInputHandle {
 	focus: () => void;
+}
+
+/**
+ * Maps pi-plan-mode's raw status string to the composer toggle's label/action.
+ * A non-technical user only ever sees "Plan" / "Planning…" / "Approve Plan" —
+ * never a slash command. Exported for unit testing.
+ */
+export function planModeButtonConfig(status: string | undefined): {
+	label: string;
+	command: string;
+	active: boolean;
+	cta: boolean;
+	disabled: boolean;
+	title: string;
+} {
+	switch (status) {
+		case "plan active":
+			return {
+				label: "Planning…",
+				command: "/plan exit",
+				active: true,
+				cta: false,
+				disabled: false,
+				title: "Plan mode is on — the agent is exploring and won't edit files. Click to cancel.",
+			};
+		case "plan ready":
+			return {
+				label: "Approve Plan",
+				command: "/plan implement",
+				active: true,
+				cta: true,
+				disabled: false,
+				title: "A plan is ready for review — click to approve and let the agent execute it.",
+			};
+		case "plan saved":
+			return {
+				label: "Resume Plan",
+				command: "/plan implement",
+				active: true,
+				cta: true,
+				disabled: false,
+				title: "A saved plan is ready — click to implement it.",
+			};
+		case "plan implementing":
+			return {
+				label: "Implementing…",
+				command: "",
+				active: true,
+				cta: false,
+				disabled: true,
+				title: "The agent is implementing the approved plan.",
+			};
+		default:
+			return {
+				label: "Plan",
+				command: "/plan",
+				active: false,
+				cta: false,
+				disabled: false,
+				title:
+					"Turn on plan mode: the agent explores and proposes a plan before changing anything.",
+			};
+	}
 }
 
 export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
@@ -107,6 +178,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			onFollowUp,
 			queue,
 			onEditQueue,
+			planModeStatus,
+			onPlanModeAction,
 		},
 		ref,
 	) => {
@@ -510,6 +583,28 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 									{modelLabel || "Hypatia"}
 								</span>
 							)}
+							{(() => {
+								const plan = planModeButtonConfig(planModeStatus);
+								return (
+									<button
+										type="button"
+										onClick={() => plan.command && (onPlanModeAction ?? onSend)(plan.command)}
+										disabled={disabled || plan.disabled}
+										aria-label={plan.title}
+										title={plan.title}
+										className={`flex items-center gap-1 h-8 px-2.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+											plan.cta
+												? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:opacity-90"
+												: plan.active
+													? "text-foreground bg-[hsl(var(--muted)/0.7)]"
+													: "text-muted-foreground hover:text-foreground hover:bg-[hsl(var(--muted)/0.7)]"
+										}`}
+									>
+										<ClipboardList size={14} />
+										{plan.label}
+									</button>
+								);
+							})()}
 						</div>
 
 						{/* Dock for the WebGL presence (V3 design): the Pulse avatar
