@@ -183,56 +183,40 @@
                 <span class="font-medium text-sm">New session</span>
             </button>
 
-            <div class="relative mb-6">
+            <div class="relative mb-5">
                 <i data-lucide="search" class="w-3.5 h-3.5 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
                 <input type="text" placeholder="Search conversations…" class="w-full bg-white border border-border rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-ink transition">
+            </div>
+
+            <!-- ============================================= -->
+            <!-- LIVE : parallel running sessions                -->
+            <!-- Rows working unattended live HERE, pulled out of -->
+            <!-- the normal list — not a separate badge tray.     -->
+            <!-- They return to Sessions the moment they finish.  -->
+            <!-- ============================================= -->
+            <div id="live-list-wrap" class="hidden mb-5">
+                <div class="flex items-center justify-between px-2 mb-2">
+                    <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Live</span>
+                    <span id="live-count" class="text-[10px] font-mono text-accent tracking-[0.2em]">· 0</span>
+                </div>
+                <div id="live-list" class="space-y-1"></div>
             </div>
 
             <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] px-2 mb-3">Sessions · 24</div>
 
             <div class="flex-1 overflow-y-auto space-y-1 -mx-1 px-1" id="session-list">
-                <div class="session-active bg-white border border-border rounded-xl px-4 py-3 cursor-pointer subtle-shadow">
+                <div class="session-active bg-white border border-border rounded-xl px-4 py-3 cursor-pointer subtle-shadow" data-session="rbc-landing">
                     <div class="text-sm font-medium text-ink truncate">RBC landing page build</div>
                     <div class="flex items-center justify-between mt-1">
                         <span class="text-xs text-gray-400 font-light truncate">Building the client-ready page…</span>
                         <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">Jul 30</span>
                     </div>
                 </div>
-                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition group">
-                    <div class="text-sm font-medium text-gray-600 group-hover:text-ink truncate">Q3 earnings call prep</div>
-                    <div class="flex items-center justify-between mt-1">
-                        <span class="text-xs text-gray-400 font-light truncate">Transcript recap + comp table</span>
-                        <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">Jul 28</span>
-                    </div>
-                </div>
-                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition group">
-                    <div class="text-sm font-medium text-gray-600 group-hover:text-ink truncate">Client onboarding flow</div>
-                    <div class="flex items-center justify-between mt-1">
-                        <span class="text-xs text-gray-400 font-light truncate">Email sequence drafts</span>
-                        <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">Jul 24</span>
-                    </div>
-                </div>
-                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition group">
-                    <div class="text-sm font-medium text-gray-600 group-hover:text-ink truncate">Market analysis — energy</div>
-                    <div class="flex items-center justify-between mt-1">
-                        <span class="text-xs text-gray-400 font-light truncate">ENB / TRP valuation pass</span>
-                        <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">Jul 19</span>
-                    </div>
-                </div>
-                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition group">
-                    <div class="text-sm font-medium text-gray-600 group-hover:text-ink truncate">Portfolio review deck</div>
-                    <div class="flex items-center justify-between mt-1">
-                        <span class="text-xs text-gray-400 font-light truncate">12 slides generated</span>
-                        <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">Jul 19</span>
-                    </div>
-                </div>
-                <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition group">
-                    <div class="text-sm font-medium text-gray-600 group-hover:text-ink truncate">Fee schedule QA</div>
-                    <div class="flex items-center justify-between mt-1">
-                        <span class="text-xs text-gray-400 font-light truncate">Cross-checked 3 documents</span>
-                        <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">Jul 12</span>
-                    </div>
-                </div>
+                <!-- Rendered by renderSessionLists() — see script. Each of the
+                     other sessions lives in exactly ONE of #live-list /
+                     #idle-list at a time, driven by SESSIONS + runningSessions,
+                     not duplicated HTML in two places. -->
+                <div id="idle-list" class="space-y-1"></div>
             </div>
 
             <div class="mt-auto pt-5 space-y-1">
@@ -590,6 +574,111 @@ const enginePill = document.getElementById('engine-pill');
 
 // Entrance: existing messages rise in
 gsap.from('.msg', { opacity: 0, y: 22, duration: 0.9, stagger: 0.15, ease: 'power3.out', delay: 0.2 });
+
+// =====================================================================
+// LIVE : parallel running sessions
+//
+// Hypatia can run several sessions concurrently; only one is on screen.
+// A session that's working unattended moves OUT of the normal list and
+// into "Live" — a real relocation, not a badge bolted onto its old row —
+// then moves back the moment it finishes. Each live row pings on its own,
+// independent cadence: market-tape texture, not an alert to clear.
+//
+// Data-driven on purpose: SESSIONS is the one source of truth for order
+// + content; runningSessions decides which of the two lists a row
+// renders into. Moving a session is just re-rendering both lists, never
+// DOM node surgery — so "return to its place when done" is automatically
+// correct instead of something we'd have to track by hand.
+// =====================================================================
+
+const SESSIONS = [
+    { id: 'q3-earnings',        title: 'Q3 earnings call prep',       subtitle: 'Transcript recap + comp table', idle: 'Jul 28' },
+    { id: 'client-onboarding',   title: 'Client onboarding flow',      subtitle: 'Email sequence drafts',          idle: 'Jul 24' },
+    { id: 'market-analysis',    title: 'Market analysis — energy',    subtitle: 'ENB / TRP valuation pass',       idle: 'Jul 19' },
+    { id: 'portfolio-review',   title: 'Portfolio review deck',       subtitle: '12 slides generated',            idle: 'Jul 19' },
+    { id: 'fee-schedule',       title: 'Fee schedule QA',             subtitle: 'Cross-checked 3 documents',      idle: 'Jul 12' },
+];
+
+const runningSessions = new Set();
+
+function pingDotHTML(size = 'h-1.5 w-1.5') {
+    return `<span class="relative flex ${size}">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+        <span class="relative inline-flex rounded-full ${size} bg-accent"></span>
+    </span>`;
+}
+
+function idleRowHTML(s) {
+    return `
+        <div class="px-4 py-3 rounded-xl hover:bg-white cursor-pointer transition group" data-session="${s.id}">
+            <div class="text-sm font-medium text-gray-600 group-hover:text-ink truncate">${s.title}</div>
+            <div class="flex items-center justify-between mt-1">
+                <span class="text-xs text-gray-400 font-light truncate">${s.subtitle}</span>
+                <span class="text-[10px] font-mono text-gray-400 ml-2 shrink-0">${s.idle}</span>
+            </div>
+        </div>`;
+}
+
+function liveRowHTML(s) {
+    // Same shape as an idle row (recognizable as "the same session"), but
+    // an accent-tinted card + the ping recipe in place of the timestamp —
+    // the one visual language for "something is happening," everywhere.
+    return `
+        <div class="bg-white border border-accent/25 rounded-xl px-4 py-3 cursor-pointer transition hover:border-accent/50 subtle-shadow" data-session="${s.id}">
+            <div class="text-sm font-medium text-ink truncate">${s.title}</div>
+            <div class="flex items-center justify-between mt-1">
+                <span class="text-xs text-gray-400 font-light truncate">${s.subtitle}</span>
+                <span class="flex items-center space-x-1.5 text-[10px] font-mono text-accent ml-2 shrink-0">
+                    ${pingDotHTML()}<span>Running</span>
+                </span>
+            </div>
+        </div>`;
+}
+
+function renderSessionLists() {
+    const liveWrap = document.getElementById('live-list-wrap');
+    const liveList = document.getElementById('live-list');
+    const idleList = document.getElementById('idle-list');
+    const count = document.getElementById('live-count');
+
+    const live = SESSIONS.filter(s => runningSessions.has(s.id));
+    const idle = SESSIONS.filter(s => !runningSessions.has(s.id));
+
+    if (live.length === 0) {
+        liveWrap.classList.add('hidden');
+        liveList.innerHTML = '';
+    } else {
+        liveWrap.classList.remove('hidden');
+        count.textContent = `· ${live.length}`;
+        liveList.innerHTML = live.map(liveRowHTML).join('');
+    }
+    idleList.innerHTML = idle.map(idleRowHTML).join('');
+
+    document.querySelectorAll('#live-list [data-session], #idle-list [data-session]').forEach(row => {
+        row.addEventListener('click', () => {
+            row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            gsap.fromTo(row, { backgroundColor: 'rgba(0,81,165,0.08)' }, { backgroundColor: 'transparent', duration: 1.1 });
+        });
+    });
+}
+
+function setSessionRunning(id, isRunning) {
+    if (isRunning) runningSessions.add(id); else runningSessions.delete(id);
+    renderSessionLists();
+}
+
+renderSessionLists();
+
+// Demo: two other sessions are already working unattended when this
+// screen loads, and their state changes over time — the relocation
+// between lists is the thing to look at, not a fixed mock. Wire real
+// state to `setSessionRunning`.
+setSessionRunning('client-onboarding', true);
+setSessionRunning('market-analysis', true);
+
+setTimeout(() => setSessionRunning('market-analysis', false), 9000);
+setTimeout(() => setSessionRunning('fee-schedule', true), 13000);
+setTimeout(() => setSessionRunning('client-onboarding', false), 19000);
 
 // Terminal collapse/expand
 document.querySelectorAll('.terminal-toggle').forEach(btn => {
