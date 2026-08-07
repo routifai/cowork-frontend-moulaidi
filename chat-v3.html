@@ -306,6 +306,63 @@
                                 </div>
                             </div>
 
+                            <!-- Multi-step card: several distinct actions (write, edit, bash,
+                                 bash) combined into ONE collapsed card instead of one card per
+                                 step. Collapsed header summarizes the sequence; expanding
+                                 reveals a step list, not a raw log. -->
+                            <div class="terminal-card bg-ink rounded-xl overflow-hidden max-w-2xl border border-black/20 subtle-shadow">
+                                <button class="terminal-toggle w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition">
+                                    <div class="flex items-center space-x-3 min-w-0">
+                                        <div class="flex space-x-1.5 shrink-0">
+                                            <div class="w-2.5 h-2.5 rounded-full bg-white/15"></div>
+                                            <div class="w-2.5 h-2.5 rounded-full bg-white/15"></div>
+                                            <div class="w-2.5 h-2.5 rounded-full bg-white/15"></div>
+                                        </div>
+                                        <span class="text-xs font-mono text-gray-300 truncate">4 steps · theme, wire-up, lint, build</span>
+                                    </div>
+                                    <div class="flex items-center space-x-3 shrink-0">
+                                        <span class="text-[10px] font-mono text-success">✓ 4/4 · 3.2s</span>
+                                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-400 terminal-chevron transition-transform"></i>
+                                    </div>
+                                </button>
+                                <div class="terminal-content hidden px-4 pb-4">
+                                    <div class="space-y-3">
+                                        <div class="step-row flex items-start space-x-2.5">
+                                            <i data-lucide="check" class="w-3.5 h-3.5 text-success mt-0.5 shrink-0"></i>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-xs font-mono text-gray-300">write theme.css</div>
+                                                <div class="text-[10px] font-mono text-gray-500 mt-0.5">RBC design tokens · 38 lines</div>
+                                            </div>
+                                            <span class="text-[10px] font-mono text-gray-600 shrink-0">0.4s</span>
+                                        </div>
+                                        <div class="step-row flex items-start space-x-2.5">
+                                            <i data-lucide="check" class="w-3.5 h-3.5 text-success mt-0.5 shrink-0"></i>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-xs font-mono text-gray-300">editing landing-page.tsx</div>
+                                                <div class="text-[10px] font-mono text-gray-500 mt-0.5">+42 −11 · applied theme tokens</div>
+                                            </div>
+                                            <span class="text-[10px] font-mono text-gray-600 shrink-0">0.9s</span>
+                                        </div>
+                                        <div class="step-row flex items-start space-x-2.5">
+                                            <i data-lucide="check" class="w-3.5 h-3.5 text-success mt-0.5 shrink-0"></i>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-xs font-mono text-gray-300">bash $ pnpm lint</div>
+                                                <div class="text-[10px] font-mono text-gray-500 mt-0.5">0 errors, 0 warnings</div>
+                                            </div>
+                                            <span class="text-[10px] font-mono text-gray-600 shrink-0">1.1s</span>
+                                        </div>
+                                        <div class="step-row flex items-start space-x-2.5">
+                                            <i data-lucide="check" class="w-3.5 h-3.5 text-success mt-0.5 shrink-0"></i>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-xs font-mono text-gray-300">bash $ pnpm build</div>
+                                                <div class="text-[10px] font-mono text-gray-500 mt-0.5">Build succeeded · dist/ 412 KB</div>
+                                            </div>
+                                            <span class="text-[10px] font-mono text-gray-600 shrink-0">0.8s</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Artifact chips -->
                             <div class="flex items-center space-x-3">
                                 <div class="bg-surface rounded-xl border border-border px-4 py-3 flex items-center space-x-3 hover:border-ink transition cursor-pointer subtle-shadow">
@@ -320,6 +377,94 @@
                                     <div>
                                         <div class="text-sm font-medium text-ink">theme.css</div>
                                         <div class="text-[11px] text-gray-400 mt-0.5 font-light">RBC design tokens</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Feedback row -->
+                            <div class="flex items-center space-x-1 pt-1">
+                                <button class="p-1.5 text-gray-300 hover:text-ink transition rounded-md hover:bg-stone"><i data-lucide="thumbs-up" class="w-3.5 h-3.5"></i></button>
+                                <button class="p-1.5 text-gray-300 hover:text-ink transition rounded-md hover:bg-stone"><i data-lucide="thumbs-down" class="w-3.5 h-3.5"></i></button>
+                                <button class="p-1.5 text-gray-300 hover:text-ink transition rounded-md hover:bg-stone"><i data-lucide="copy" class="w-3.5 h-3.5"></i></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- A genuinely SEPARATE round-trip: the user asks for something
+                         else, the agent responds again. This is the "two turns" the
+                         combined-steps card should be demonstrated across — not one
+                         agent message split in half with nothing from the user
+                         in between. -->
+                    <div class="msg flex flex-col items-end">
+                        <div class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em] mb-2 pr-1">You · 5:15 PM</div>
+                        <div class="glass-panel rounded-panel rounded-tr-md px-6 py-4 max-w-xl">
+                            <p class="text-[15px] leading-relaxed">Also add a testimonials section, and make sure it's accessible.</p>
+                        </div>
+                    </div>
+
+                    <div class="msg">
+                        <div class="flex items-center space-x-3 mb-3">
+                            <div class="w-7 h-7 orb-slot shrink-0"></div>
+                            <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.25em]">Hypatia · 5:16 PM</span>
+                        </div>
+                        <div class="pl-10 space-y-4">
+                            <p class="text-[15px] font-light leading-relaxed text-ink max-w-2xl">
+                                Adding the testimonials section now, with an accessibility pass on the way in.
+                            </p>
+
+                            <!-- Same combined-steps pattern, a different turn's work. -->
+                            <div class="terminal-card bg-ink rounded-xl overflow-hidden max-w-2xl border border-black/20 subtle-shadow">
+                                <button class="terminal-toggle w-full flex items-center justify-between px-4 py-3 hover:bg-white/5 transition">
+                                    <div class="flex items-center space-x-3 min-w-0">
+                                        <div class="flex space-x-1.5 shrink-0">
+                                            <div class="w-2.5 h-2.5 rounded-full bg-white/15"></div>
+                                            <div class="w-2.5 h-2.5 rounded-full bg-white/15"></div>
+                                            <div class="w-2.5 h-2.5 rounded-full bg-white/15"></div>
+                                        </div>
+                                        <span class="text-xs font-mono text-gray-300 truncate">3 steps · testimonials, wire-up, a11y audit</span>
+                                    </div>
+                                    <div class="flex items-center space-x-3 shrink-0">
+                                        <span class="text-[10px] font-mono text-success">✓ 3/3 · 2.1s</span>
+                                        <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-gray-400 terminal-chevron transition-transform"></i>
+                                    </div>
+                                </button>
+                                <div class="terminal-content hidden px-4 pb-4">
+                                    <div class="space-y-3">
+                                        <div class="step-row flex items-start space-x-2.5">
+                                            <i data-lucide="check" class="w-3.5 h-3.5 text-success mt-0.5 shrink-0"></i>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-xs font-mono text-gray-300">write testimonials.tsx</div>
+                                                <div class="text-[10px] font-mono text-gray-500 mt-0.5">3 quotes · 61 lines</div>
+                                            </div>
+                                            <span class="text-[10px] font-mono text-gray-600 shrink-0">0.5s</span>
+                                        </div>
+                                        <div class="step-row flex items-start space-x-2.5">
+                                            <i data-lucide="check" class="w-3.5 h-3.5 text-success mt-0.5 shrink-0"></i>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-xs font-mono text-gray-300">editing landing-page.tsx</div>
+                                                <div class="text-[10px] font-mono text-gray-500 mt-0.5">+9 −0 · mounted section</div>
+                                            </div>
+                                            <span class="text-[10px] font-mono text-gray-600 shrink-0">0.4s</span>
+                                        </div>
+                                        <div class="step-row flex items-start space-x-2.5">
+                                            <i data-lucide="check" class="w-3.5 h-3.5 text-success mt-0.5 shrink-0"></i>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-xs font-mono text-gray-300">bash $ pnpm a11y-check</div>
+                                                <div class="text-[10px] font-mono text-gray-500 mt-0.5">0 violations · WCAG AA</div>
+                                            </div>
+                                            <span class="text-[10px] font-mono text-gray-600 shrink-0">1.2s</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Artifact chip -->
+                            <div class="flex items-center space-x-3">
+                                <div class="bg-surface rounded-xl border border-border px-4 py-3 flex items-center space-x-3 hover:border-ink transition cursor-pointer subtle-shadow">
+                                    <div class="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center"><i data-lucide="layout" class="w-4 h-4 text-accent"></i></div>
+                                    <div>
+                                        <div class="text-sm font-medium text-ink">testimonials.tsx</div>
+                                        <div class="text-[11px] text-gray-400 mt-0.5 font-light">New · 61 lines</div>
                                     </div>
                                 </div>
                             </div>
