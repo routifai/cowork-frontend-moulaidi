@@ -71,4 +71,40 @@ for (const f of ["index.cjs", "index.d.ts", "index.js", "index.js.map", "index.d
 console.log("[prebuild] Writing bundle...");
 writeFileSync(join(targetDir, "index.cjs"), code, "utf-8");
 
-console.log(`[prebuild] Done (${(code.length / 1024 / 1024).toFixed(1)} MB)`);
+console.log("[prebuild] Copying sidecar native/optional modules...");
+for (const pkg of ["better-sqlite3"]) {
+	const src = join(backendDir, "node_modules", pkg);
+	const dest = join(targetDir, "node_modules", pkg);
+	if (!existsSync(src)) {
+		console.warn(`[prebuild]   skip ${pkg} — not installed in hypatia-backend`);
+		continue;
+	}
+	rmSync(dest, { recursive: true, force: true });
+	cpSync(src, dest, { recursive: true });
+	console.log(`[prebuild]   copied ${pkg}`);
+}
+
+console.log("[prebuild] Syncing presentation-export and Chromium...");
+execSync("node vendor/sync-presentation-export.mjs", {
+	cwd: join(backendDir, "presenting", "engine"),
+	shell: true,
+	stdio: "inherit",
+});
+
+console.log("[prebuild] Syncing preset template thumbnails...");
+execSync("node scripts/sync-presenting-template-thumbnails.mjs", {
+	cwd: root,
+	shell: true,
+	stdio: "inherit",
+	env: { ...process.env, HYPATIA_BACKEND_PATH: backendDir },
+});
+
+console.log("[prebuild] Syncing presenting icon assets...");
+execSync("node scripts/sync-presenting-icons.mjs", {
+	cwd: root,
+	shell: true,
+	stdio: "inherit",
+	env: { ...process.env, HYPATIA_BACKEND_PATH: backendDir },
+});
+
+console.log(`[prebuild] Done (${(code.length / 1024 / 1024).toFixed(1)} MB agent bundle)`);

@@ -261,3 +261,20 @@ export function DialogStaggerItem({
 		</motion.div>
 	);
 }
+
+// ---------------------------------------------------------------------------
+// Radix UI compat exports for the Presenting sub-tree
+// These forward to the native Radix Dialog primitive that ships with
+// @radix-ui/react-dialog (installed for the editor port).
+// ---------------------------------------------------------------------------
+
+export {
+	Root as DialogRoot,
+	Trigger as DialogTrigger,
+	Portal as DialogPortal,
+	Overlay as DialogOverlay,
+	Content as DialogContent,
+	Title as DialogTitle,
+	Description as DialogDescription,
+	Close as DialogClose,
+} from "@radix-ui/react-dialog";

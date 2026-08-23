@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypatia — Convergence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ink: '#0d0d0f', surface: '#ffffff', stone: '#fafafa',
+                        border: '#e7e7e9', accent: '#0051a5', gold: '#e8a821', success: '#10a37f'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        serif: ['Playfair Display', 'Georgia', 'serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        html, body { height: 100%; }
+        body { font-family: 'Inter', sans-serif; overflow: hidden; background: #fbfbfc; color: #0d0d0f; }
+        .editorial-text { font-family: 'Playfair Display', serif; letter-spacing: -0.02em; }
+        ::-webkit-scrollbar { width: 0; }
+
+        .grain {
+            position: fixed; inset: 0; z-index: 90; pointer-events: none;
+            opacity: 0.035; mix-blend-mode: multiply;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+
+        .glitch-text { position: relative; }
+        .glitch-text::before, .glitch-text::after {
+            content: attr(data-text);
+            position: absolute; inset: 0; opacity: 0; pointer-events: none; white-space: nowrap;
+        }
+        .glitch-text.glitching::before { opacity: 0.85; color: #0051a5; animation: ga 0.24s steps(2) both; }
+        .glitch-text.glitching::after  { opacity: 0.85; color: #e8a821; animation: gb 0.24s steps(2) both; }
+        @keyframes ga {
+            0% { clip-path: inset(8% 0 62% 0); transform: translate(-4px, 1px); }
+            50% { clip-path: inset(42% 0 28% 0); transform: translate(3px, -1px); }
+            100% { clip-path: inset(70% 0 4% 0); transform: translate(-2px, 0); }
+        }
+        @keyframes gb {
+            0% { clip-path: inset(58% 0 16% 0); transform: translate(4px, -1px); }
+            50% { clip-path: inset(12% 0 66% 0); transform: translate(-3px, 1px); }
+            100% { clip-path: inset(36% 0 42% 0); transform: translate(2px, 0); }
+        }
+
+        /* Compass rose — small ambient instrument, bottom-right corner.
+           Rotates slowly — a live detail, not a static icon. */
+        #compass-rose {
+            position: fixed; right: 28px; bottom: 28px; z-index: 15;
+            width: 108px; height: 108px; overflow: visible;
+            pointer-events: none;
+            animation: compass-spin 240s linear infinite;
+        }
+        @keyframes compass-spin { to { transform: rotate(360deg); } }
+        .compass-label { font-family: 'JetBrains Mono', monospace; }
+
+        #caption { opacity: 0; transition: opacity 1.2s ease; }
+        #caption.visible { opacity: 1; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *:not(#gl) { animation: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="grain"></div>
+    <svg id="compass-rose" viewBox="0 0 400 400"></svg>
+    <canvas id="gl" class="fixed inset-0 z-20 pointer-events-none"></canvas>
+
+    <!-- Header, same chrome as the auth/chat hero -->
+    <div class="relative z-50 flex items-center justify-between px-10 pt-8 pb-4">
+        <div>
+            <div class="flex items-center space-x-3 mb-3">
+                <span class="w-1.5 h-1.5 rounded-full bg-gold animate-pulse"></span>
+                <span class="text-[10px] font-mono text-gray-400 uppercase tracking-[0.3em]" id="kicker">Mass accretion · event horizon stable</span>
+            </div>
+            <h1 class="glitch-text editorial-text text-3xl text-ink" data-text="Hypatia.">Hypatia.</h1>
+        </div>
+        <button id="replay-btn" class="hidden items-center space-x-2 text-[10px] font-mono uppercase tracking-[0.2em] text-gray-400 hover:text-ink border border-border rounded-lg px-3 py-2 bg-white transition">
+            <span>Replay</span>
+        </button>
+    </div>
+
+    <div id="caption" class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 text-[11px] font-mono uppercase tracking-[0.25em] text-gray-400">
+        Everything nearby eventually joins.
+    </div>
+
+<script>
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// =====================================================================
+// COMPASS ROSE — built with real trig at runtime (not hand-typed
+// coordinates), sitting behind the orb like a pivot point. Pure SVG/DOM,
+// no WebGL dependency, so it can never be affected by anything that goes
+// wrong in the Three.js scene.
+// =====================================================================
+function buildCompassRose() {
+    const svg = document.getElementById('compass-rose');
+    const NS = 'http://www.w3.org/2000/svg';
+    const cx = 200, cy = 200;
+    const dot = (deg, r) => {
+        const rad = (deg * Math.PI) / 180;
+        return { x: cx + r * Math.sin(rad), y: cy - r * Math.cos(rad) };
+    };
+    const el = (tag, attrs) => {
+        const n = document.createElementNS(NS, tag);
+        for (const k in attrs) n.setAttribute(k, attrs[k]);
+        return n;
+    };
+
+    // ---- outer tick ring: 48 small dots, every 30° a slightly larger one
+    const ticks = el('g', { opacity: '0.5' });
+    for (let i = 0; i < 48; i++) {
+        const deg = (360 / 48) * i;
+        const major = i % 6 === 0;
+        const p = dot(deg, 172);
+        ticks.appendChild(el('circle', {
+            cx: p.x, cy: p.y, r: major ? 2.4 : 1.3,
+            fill: major ? '#0d0d0f' : '#c4c4ca',
+        }));
+    }
+    svg.appendChild(ticks);
+
+    // ---- two thin concentric rings
+    [148, 128].forEach((r, i) => {
+        svg.appendChild(el('circle', {
+            cx, cy, r, fill: 'none', stroke: '#d4d4d8',
+            'stroke-width': i === 0 ? 1 : 0.6, opacity: '0.6',
+        }));
+    });
+
+    // ---- 8-point star: 4 long cardinal spikes, 4 short intercardinal ones.
+    // Each spike is a kite split into two triangles (dark / light half) for
+    // the classic engraved pinwheel shading.
+    const CARDINAL = [
+        { deg: 0, label: 'N', bold: true },
+        { deg: 90, label: 'E', bold: true },
+        { deg: 180, label: 'S', bold: true },
+        { deg: 270, label: 'W', bold: true },
+    ];
+    const INTERCARDINAL = [
+        { deg: 45, label: 'ne' },
+        { deg: 135, label: 'se' },
+        { deg: 225, label: 'sw' },
+        { deg: 315, label: 'nw' },
+    ];
+
+    function spike(deg, length, baseWidth, darkColor, lightColor, darkOpacity, lightOpacity) {
+        const rad = (deg * Math.PI) / 180;
+        const dirX = Math.sin(rad), dirY = -Math.cos(rad);
+        const perpX = -dirY, perpY = dirX; // 90° clockwise from the spike direction
+        const tip = { x: cx + dirX * length, y: cy + dirY * length };
+        const left = { x: cx + perpX * -baseWidth, y: cy + perpY * -baseWidth };
+        const right = { x: cx + perpX * baseWidth, y: cy + perpY * baseWidth };
+        const g = el('g', {});
+        g.appendChild(el('polygon', {
+            points: `${cx},${cy} ${left.x},${left.y} ${tip.x},${tip.y}`,
+            fill: darkColor, opacity: darkOpacity,
+        }));
+        g.appendChild(el('polygon', {
+            points: `${cx},${cy} ${tip.x},${tip.y} ${right.x},${right.y}`,
+            fill: lightColor, opacity: lightOpacity,
+        }));
+        return { g, tip };
+    }
+
+    // Long cardinal spikes — ink dark half / cool-gray light half.
+    CARDINAL.forEach(({ deg }) => {
+        const { g } = spike(deg, 176, 15, '#0d0d0f', '#a8b3c4', '0.9', '0.55');
+        svg.appendChild(g);
+    });
+    // Short intercardinal spikes — the accent pair, quieter than the cardinals.
+    INTERCARDINAL.forEach(({ deg }, i) => {
+        const accent = i % 2 === 0 ? '#0051a5' : '#e8a821';
+        const { g } = spike(deg, 98, 9, '#0d0d0f', accent, '0.55', '0.5');
+        svg.appendChild(g);
+    });
+
+    // ---- labels
+    CARDINAL.forEach(({ deg, label }) => {
+        const p = dot(deg, 182);
+        svg.appendChild(el('text', {
+            x: p.x, y: p.y, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+            class: 'compass-label', 'font-size': '26', 'font-weight': '600', fill: '#0d0d0f',
+        })).textContent = label;
+    });
+    INTERCARDINAL.forEach(({ deg, label }) => {
+        const p = dot(deg, 114);
+        const rot = deg > 180 ? deg - 180 : deg; // keep text upright, not upside-down
+        svg.appendChild(el('text', {
+            x: p.x, y: p.y, 'text-anchor': 'middle', 'dominant-baseline': 'middle',
+            class: 'compass-label', 'font-size': '13', 'font-style': 'italic', fill: '#71717a',
+            transform: `rotate(${rot} ${p.x} ${p.y})`,
+        })).textContent = label;
+    });
+}
+buildCompassRose();
+
+// =====================================================================
+// SCENE — full-viewport canvas on the native light background, exactly
+// like every other V3 presence (v3-concept.html's orb hero). No boxed
+// dark stage, no separate viewport-sizing logic to get wrong.
+// =====================================================================
+const canvas = document.getElementById('gl');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 9);
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function project(vec3) {
+    const p = vec3.clone().project(camera);
+    return { x: (p.x * 0.5 + 0.5) * window.innerWidth, y: (1 - (p.y * 0.5 + 0.5)) * window.innerHeight };
+}
+
+// ---- The orb: same Royal Gloss chrome-sapphire shader as the auth hero,
+// unmodified — proven, so no new shader risk here. ----
+const SNOISE = `
+vec3 mod289(vec3 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 mod289(vec4 x){return x - floor(x * (1.0/289.0)) * 289.0;}
+vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}
+vec4 taylorInvSqrt(vec4 r){return 1.79284291400159 - 0.85373472095314 * r;}
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g = step(x0.yzx, x0.xyz);
+  vec3 l = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+      i.z + vec4(0.0, i1.z, i2.z, 1.0))
+    + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+    + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x = x_ * ns.x + ns.yyyy;
+  vec4 y = y_ * ns.x + ns.yyyy;
+  vec4 h = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0)*2.0 + 1.0;
+  vec4 s1 = floor(b1)*2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+`;
+const orbVertex = SNOISE + `
+uniform float uTime, uAmp, uFreq, uSpeed, uGlitch;
+varying vec3 vN; varying vec3 vV; varying float vD;
+float displace(vec3 dir, float t) {
+  float n1 = snoise(dir * uFreq + vec3(t * 0.7, t * 0.55, t * 0.4));
+  float n2 = snoise(dir * uFreq * 2.0 + vec3(-t * 0.5, t * 0.7, t * 0.4)) * 0.15;
+  return (n1 + n2) * uAmp;
+}
+vec3 ortho(vec3 v){ return normalize(abs(v.x) > abs(v.z) ? vec3(-v.y, v.x, 0.0) : vec3(0.0, -v.z, v.y)); }
+void main() {
+  float t = uTime * uSpeed;
+  vec3 dir = normalize(position);
+  float r = length(position);
+  float d = displace(dir, t);
+  vec3 p = dir * (r + d);
+  float e = 0.08;
+  vec3 tg = ortho(dir), bt = normalize(cross(dir, tg));
+  vec3 d1 = normalize(dir + tg * e), d2 = normalize(dir + bt * e);
+  vec3 p1 = d1 * (r + displace(d1, t)), p2 = d2 * (r + displace(d2, t));
+  vec3 n = normalize(cross(p1 - p, p2 - p));
+  if (uGlitch > 0.001) {
+    float bandId = floor((dir.y + 1.0) * 7.0);
+    float frameQ = floor(uTime * 24.0);
+    float tear = step(0.62, fract(sin(bandId * 91.7 + frameQ * 7.31) * 43758.5453));
+    p.x += uGlitch * tear * 0.16 * sin(bandId * 3.0 + frameQ);
+  }
+  vD = d;
+  vN = normalize(normalMatrix * n);
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  vV = normalize(-mv.xyz);
+  gl_Position = projectionMatrix * mv;
+}
+`;
+const orbFragment = `
+uniform float uTime, uEnergy, uGlitch;
+varying vec3 vN; varying vec3 vV; varying float vD;
+void main() {
+  vec3 N = normalize(vN), V = normalize(vV);
+  float ndv = clamp(dot(N, V), 0.0, 1.0);
+  float fresnel = pow(1.0 - ndv, 2.2);
+  vec3 deep = vec3(0.02, 0.07, 0.38);
+  vec3 mid  = vec3(0.10, 0.32, 0.92);
+  vec3 ice  = vec3(0.86, 0.94, 1.00);
+  float band = 0.5 + 0.5 * sin(vD * 9.0 + ndv * 4.0 + uTime * 0.15);
+  vec3 film = mix(mid, ice, smoothstep(0.35, 0.95, band));
+  vec3 c = mix(deep, film, 0.25 + fresnel * (0.6 + uEnergy * 0.2));
+  float streak = smoothstep(0.10, 0.30, vD) * (0.5 + 0.5 * ndv);
+  c = mix(c, ice, streak * 0.55);
+  vec3 L = normalize(vec3(0.5, 0.8, 0.6));
+  c += vec3(1.0) * pow(max(dot(reflect(-L, N), V), 0.0), 60.0) * 1.1;
+  vec3 R = normalize(vec3(-0.7, -0.3, 0.4));
+  c += vec3(0.7, 0.85, 1.0) * pow(max(dot(reflect(-R, N), V), 0.0), 28.0) * 0.35;
+  c += mix(mid, ice, 0.6) * pow(1.0 - ndv, 4.0) * 0.45;
+  if (uGlitch > 0.001) {
+    float scan = sin(gl_FragCoord.y * 1.7 + uTime * 90.0);
+    c += vec3(0.08, 0.25, 0.85) * uGlitch * scan * 0.14;
+    float skew = sin(gl_FragCoord.y * 0.6);
+    c.r += uGlitch * skew * 0.10;
+    c.b -= uGlitch * skew * 0.07;
+  }
+  gl_FragColor = vec4(c, 1.0);
+}
+`;
+const orbUniforms = {
+    uTime: { value: 0 }, uAmp: { value: 0.22 }, uFreq: { value: 0.95 },
+    uSpeed: { value: REDUCED_MOTION ? 0.08 : 0.32 }, uEnergy: { value: 0 }, uGlitch: { value: 0 },
+};
+const orbGroup = new THREE.Group();
+const orbMesh = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.5, 96),
+    new THREE.ShaderMaterial({ vertexShader: orbVertex, fragmentShader: orbFragment, uniforms: orbUniforms })
+);
+orbGroup.add(orbMesh);
+scene.add(orbGroup);
+
+const glowEl = document.createElement('div');
+Object.assign(glowEl.style, {
+    position: 'fixed', left: '50%', top: '50%', width: '58vmin', height: '58vmin',
+    transform: 'translate(-50%, -50%)', borderRadius: '9999px', pointerEvents: 'none', zIndex: '1',
+    background: 'radial-gradient(circle at 45% 40%, rgba(46,105,255,0.20) 0%, rgba(64,140,255,0.09) 35%, rgba(255,255,255,0) 70%)',
+    filter: 'blur(6px)',
+});
+document.body.insertBefore(glowEl, canvas);
+
+function glitchBurst(strength = 1) {
+    if (REDUCED_MOTION) { orbUniforms.uGlitch.value = strength * 0.3; return; }
+    gsap.fromTo(orbUniforms.uGlitch, { value: strength }, { value: 0, duration: 0.4, ease: 'steps(5)' });
+    document.querySelectorAll('.glitch-text').forEach(el => {
+        el.classList.add('glitching');
+        setTimeout(() => el.classList.remove('glitching'), 260);
+    });
+}
+
+// =====================================================================
+// SATELLITES — north (cold) and south (warm), decaying ellipses, real
+// DOM labels tracking their screen position every frame.
+// =====================================================================
+function makeSatellite(hex) {
+    const group = new THREE.Group();
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 20), new THREE.MeshBasicMaterial({ color: hex }));
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.24, 20, 20), new THREE.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0.25, depthWrite: false }));
+    group.add(core, halo);
+    scene.add(group);
+    return { group, core, halo };
+}
+const north = makeSatellite(0x8fc4ff); // cold — falls from the top (N)
+const south = makeSatellite(0xf3c877); // warm — falls from the bottom (S)
+
+// Straight gravitational fall toward the orb, driven by GSAP tweens on a
+// plain progress value — deterministic and well-tested, unlike hand-rolled
+// orbital trig (which is what put north off-screen and froze south).
+// A slight perpendicular bow (sin(p*PI) term) gives each path a gentle
+// slingshot arc instead of a perfectly straight, mechanical line.
+function makeFall(sat, startPos, bowAxis, bowAmount, duration, delay) {
+    const start = startPos.clone();
+    const state = { p: 0 };
+    gsap.to(state, {
+        p: 1,
+        duration,
+        delay,
+        ease: 'power2.in', // accelerating, like gravity actually pulling harder
+        onUpdate: () => {
+            const pos = start.clone().lerp(new THREE.Vector3(0, 0, 0), state.p);
+            pos.addScaledVector(bowAxis, Math.sin(state.p * Math.PI) * bowAmount);
+            sat.group.position.copy(pos);
+        },
+        onComplete: () => arrive(sat),
+    });
+}
+
+let arrivedCount = 0;
+function arrive(sat) {
+    sat.group.visible = false;
+    arrivedCount++;
+    if (arrivedCount === 1) {
+        setKicker('Mass accretion · +1 body absorbed');
+    } else if (arrivedCount === 2) {
+        collide();
+    }
+}
+
+// Both bodies land within one GSAP-timeline tick of each other by design
+// (identical duration/delay below) — this is the collision: one shared,
+// bigger burst rather than two smaller sequential ones.
+function collide() {
+    glitchBurst(1.4);
+    gsap.to(orbUniforms.uEnergy, { value: orbUniforms.uEnergy.value + 0.7, duration: 1.4, ease: 'power2.out' });
+    gsap.to(orbUniforms.uAmp, { value: orbUniforms.uAmp.value + 0.1, duration: 1.4, ease: 'power2.out' });
+    gsap.fromTo(orbGroup.scale, { x: 1, y: 1, z: 1 }, { x: 1.12, y: 1.12, z: 1.12, duration: 0.45, ease: 'power2.out', yoyo: true, repeat: 1 });
+    setKicker('Mass accretion · event horizon stable');
+    setTimeout(finish, 1300);
+}
+
+function setKicker(text) {
+    const el = document.getElementById('kicker');
+    gsap.to(el, { opacity: 0, duration: 0.25, onComplete: () => {
+        el.textContent = text;
+        gsap.to(el, { opacity: 1, duration: 0.35 });
+    }});
+}
+
+function finish() {
+    document.getElementById('caption').classList.add('visible');
+    const btn = document.getElementById('replay-btn');
+    btn.classList.remove('hidden');
+    btn.classList.add('flex');
+    gsap.from(btn, { opacity: 0, duration: 0.6 });
+}
+document.getElementById('replay-btn').addEventListener('click', () => location.reload());
+
+// North starts high (top of the screen), south starts low (bottom) — the
+// compass reading is now literal screen position, not just a color hint.
+// Same duration/delay for both so they converge on the orb together.
+const FALL_DURATION = REDUCED_MOTION ? 2.5 : 6.5;
+makeFall(north, new THREE.Vector3(-0.9, 3.1, 0.4), new THREE.Vector3(1, 0, 0), 0.9, FALL_DURATION, 0.6);
+makeFall(south, new THREE.Vector3(0.9, -3.1, -0.4), new THREE.Vector3(-1, 0, 0), 0.9, FALL_DURATION, 0.6);
+
+// ---- Loop ----
+const clock = new THREE.Clock();
+let rafId = null;
+function frame() {
+    rafId = requestAnimationFrame(frame);
+    const t = clock.getElapsedTime();
+    const dt = Math.min(clock.getDelta(), 0.05);
+    orbUniforms.uTime.value = t;
+    orbMesh.rotation.y = t * 0.05;
+    renderer.render(scene, camera);
+}
+frame();
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(rafId); rafId = null; }
+    else if (rafId === null) { clock.getDelta(); frame(); }
+});
+
+gsap.from(orbGroup.scale, { x: 0.001, y: 0.001, z: 0.001, duration: 2, ease: 'expo.out', delay: 0.2 });
+gsap.from(['#kicker', '.editorial-text'], { opacity: 0, y: 10, duration: 0.8, stagger: 0.08, ease: 'power2.out' });
+</script>
+</body>
+</html>

@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hypatia — Agent, Waiting</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        ink: '#0d0d0f',
+                        stone: '#fafafa',
+                        border: '#e7e7e9',
+                        accent: '#234FAE',
+                        gold: '#E7B548',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        serif: ['Playfair Display', 'Georgia', 'serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    borderRadius: {
+                        panel: '22px',
+                    },
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #fbfbfc; color: #0d0d0f; }
+        .editorial-text { font-family: 'Playfair Display', serif; letter-spacing: -0.02em; }
+        .grain {
+            position: fixed; inset: 0; z-index: 60; pointer-events: none;
+            opacity: 0.035; mix-blend-mode: multiply;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+        }
+        #stage-glow {
+            position: absolute; left: 50%; top: 54%;
+            width: 60%; height: 60%;
+            transform: translate(-50%, -50%);
+            border-radius: 9999px;
+            background: radial-gradient(circle at 45% 40%,
+                rgba(35, 79, 174, 0.14) 0%,
+                rgba(231, 181, 72, 0.07) 45%,
+                rgba(255,255,255,0) 70%);
+            filter: blur(4px);
+            pointer-events: none;
+        }
+        .status-dot { box-shadow: 0 0 0 0 rgba(231,181,72,0.5); animation: dot-pulse 2.4s ease-out infinite; }
+        @keyframes dot-pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(231,181,72,0.45); }
+            70%  { box-shadow: 0 0 0 8px rgba(231,181,72,0); }
+            100% { box-shadow: 0 0 0 0 rgba(231,181,72,0); }
+        }
+        .dots::after {
+            content: "";
+            animation: dots-cycle 1.6s steps(4,end) infinite;
+        }
+        @keyframes dots-cycle {
+            0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75%,100% { content: "..."; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .status-dot { animation: none; }
+            .dots::after { animation: none; content: "…"; }
+        }
+    </style>
+</head>
+<body>
+    <div class="grain"></div>
+
+    <div class="max-w-6xl mx-auto px-8 py-14">
+        <div class="flex items-end justify-between mb-8">
+            <div>
+                <div class="flex items-center space-x-3 mb-4">
+                    <div class="w-1.5 h-1.5 rounded-full bg-gold animate-pulse"></div>
+                    <span class="text-[11px] font-mono uppercase tracking-[0.3em] text-gray-400">Agent presence · four states</span>
+                </div>
+                <h1 class="text-5xl editorial-text text-ink">Small body,<br><span class="italic text-gray-400">big presence.</span></h1>
+            </div>
+            <p class="text-sm text-gray-500 font-light max-w-xs leading-relaxed text-right">
+                One silhouette, four moods — waiting, thinking, using a tool, done. The eyebrows do most of the acting; the mane just breathes along with it.
+            </p>
+        </div>
+
+        <div class="relative rounded-panel border border-border bg-white overflow-hidden" style="height: 62vh;">
+            <div id="stage-glow"></div>
+            <canvas id="stage" class="absolute inset-0 w-full h-full"></canvas>
+
+            <div class="absolute left-6 bottom-6 flex items-center space-x-2.5 select-none">
+                <div class="status-dot w-1.5 h-1.5 rounded-full bg-gold"></div>
+                <span id="hud-state" class="text-[11px] font-mono uppercase tracking-[0.25em] text-gray-400">idle</span>
+                <span class="text-[11px] font-mono text-gray-300">·</span>
+                <span id="hud-detail" class="text-[11px] font-mono uppercase tracking-[0.25em] text-gray-400 dots">waiting for input</span>
+            </div>
+
+            <div class="absolute right-6 bottom-6 text-[10px] font-mono text-gray-300 uppercase tracking-[0.25em]">Rendered live · WebGL</div>
+        </div>
+
+        <div class="text-center text-[10px] font-mono text-gray-300 uppercase tracking-[0.25em] mt-8">Hypatia · RBC palette · agent-v3</div>
+    </div>
+
+<script>
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// RBC lion — navy/royal-blue mane, warm gold coat
+const MANE_SHADOW = 0x152f70; // recessed base, peeks through clump gaps
+const MANE_DARK   = 0x234FAE; // navy — primary clump tone
+const MANE_DARK2  = 0x2d5cc4; // alternate clump tone, for visible separation
+const MANE_LIGHT  = 0x3B82F6; // royal blue — inner ring + highlights
+const BODY       = 0xE7B548; // warm gold
+const BODY_SHADE = 0xd1a03a;
+const CREAM      = 0xFFF8E7;
+const INK        = 0x3A2415; // dark brown, not pure black
+
+function flatMesh(shape, color, x, y, z, opacity) {
+    const geo = new THREE.ShapeGeometry(shape, 32);
+    const mat = opacity === undefined
+        ? new THREE.MeshBasicMaterial({ color })
+        : new THREE.MeshBasicMaterial({ color, transparent: true, opacity });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    return mesh;
+}
+
+// additive, low-opacity discs stacked to fake a soft bloom halo
+function glow(rx, ry, color, opacity, x, y, z) {
+    const geo = new THREE.ShapeGeometry(ellipseShape(rx, ry), 32);
+    const mat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    return mesh;
+}
+
+function ellipseShape(rx, ry, segments = 48) {
+    const shape = new THREE.Shape();
+    for (let i = 0; i <= segments; i++) {
+        const a = (i / segments) * Math.PI * 2;
+        const x = Math.cos(a) * rx, y = Math.sin(a) * ry;
+        if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+    }
+    return shape;
+}
+
+// a soft arc — closed/happy eyes, smiles, eyebrows all come from this
+function archShape(w, h, thickness = 0.3) {
+    const shape = new THREE.Shape();
+    shape.moveTo(-w / 2, 0);
+    shape.quadraticCurveTo(0, h, w / 2, 0);
+    shape.quadraticCurveTo(0, h * thickness, -w / 2, 0);
+    return shape;
+}
+
+function starShape(r) {
+    const shape = new THREE.Shape();
+    for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2;
+        const rad = i % 2 === 0 ? r : r * 0.4;
+        const x = Math.cos(a) * rad, y = Math.sin(a) * rad;
+        if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+    }
+    shape.closePath();
+    return shape;
+}
+
+function tinyBar(w, h, color, x, y, z, rot) {
+    const geo = new THREE.PlaneGeometry(w, h);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color }));
+    mesh.position.set(x, y, z);
+    mesh.rotation.z = rot;
+    return mesh;
+}
+
+function group(...children) {
+    const g = new THREE.Group();
+    children.forEach((c) => g.add(c));
+    return g;
+}
+
+const creature = new THREE.Group();
+
+// blurred contact shadow — a few stacked, shrinking, fading ellipses
+// instead of one hard-edged one
+[[0.66, 0.15, 0.05], [0.56, 0.12, 0.09], [0.46, 0.09, 0.14]].forEach(([rx, ry, op]) => {
+    creature.add(flatMesh(ellipseShape(rx, ry), 0x000000, 0, -0.86, -0.95, op));
+});
+
+// tail — a single smooth tapered ribbon along a spline, not a chain of
+// discrete circles (which reads as lumpy beads instead of a tail)
+function catmullRom(p0, p1, p2, p3, t) {
+    const t2 = t * t, t3 = t2 * t;
+    return {
+        x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+        y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+    };
+}
+function sampleSpline(pts, perSeg = 14) {
+    const padded = [pts[0], ...pts, pts[pts.length - 1]];
+    const out = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+        const [p0, p1, p2, p3] = [padded[i], padded[i + 1], padded[i + 2], padded[i + 3]];
+        for (let s = 0; s < perSeg; s++) out.push(catmullRom(p0, p1, p2, p3, s / perSeg));
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+}
+function ribbonShape(points, widthFn) {
+    const left = [], right = [];
+    for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        const prev = points[Math.max(0, i - 1)];
+        const next = points[Math.min(points.length - 1, i + 1)];
+        const tx = next.x - prev.x, ty = next.y - prev.y;
+        const len = Math.hypot(tx, ty) || 1;
+        const nx = -ty / len, ny = tx / len;
+        const w = widthFn(i / (points.length - 1));
+        left.push({ x: p.x + nx * w, y: p.y + ny * w });
+        right.push({ x: p.x - nx * w, y: p.y - ny * w });
+    }
+    const shape = new THREE.Shape();
+    shape.moveTo(left[0].x, left[0].y);
+    left.forEach((p) => shape.lineTo(p.x, p.y));
+    for (let i = right.length - 1; i >= 0; i--) shape.lineTo(right[i].x, right[i].y);
+    shape.closePath();
+    return shape;
+}
+
+const tailPivot = new THREE.Group();
+tailPivot.position.set(0.3, -0.16, -0.6);
+const tailSpine = [
+    { x: 0.00, y: 0.00 }, { x: 0.24, y: 0.22 }, { x: 0.52, y: 0.4 },
+    { x: 0.8, y: 0.34 }, { x: 0.95, y: 0.06 }, { x: 0.82, y: -0.24 },
+];
+const tailPath = sampleSpline(tailSpine);
+const tailWidth = (u) => 0.13 * (1 - u) + 0.045 * u ** 1.3;
+tailPivot.add(flatMesh(ribbonShape(tailPath, tailWidth), BODY_SHADE, 0, 0, 0));
+
+// pom-pom tuft at the tip — a small cluster of overlapping clumps,
+// same construction language as the mane
+const tip = tailSpine[tailSpine.length - 1];
+[
+    { dx: 0, dy: 0, r: 0.1, c: MANE_DARK },
+    { dx: -0.06, dy: 0.05, r: 0.08, c: MANE_DARK2 },
+    { dx: 0.07, dy: 0.03, r: 0.075, c: MANE_DARK2 },
+    { dx: 0.01, dy: -0.06, r: 0.07, c: MANE_DARK },
+].forEach((p) => {
+    tailPivot.add(flatMesh(ellipseShape(p.r, p.r), p.c, tip.x + p.dx, tip.y + p.dy, 0.01));
+});
+creature.add(tailPivot);
+
+// body — small, sits low; the mane does the talking
+creature.add(flatMesh(ellipseShape(0.36, 0.3), BODY, 0, -0.1, -0.5));
+creature.add(flatMesh(ellipseShape(0.19, 0.24), BODY_SHADE, -0.26, -0.2, -0.48));
+creature.add(flatMesh(ellipseShape(0.19, 0.24), BODY_SHADE, 0.26, -0.2, -0.48));
+creature.add(flatMesh(ellipseShape(0.19, 0.22), CREAM, 0, -0.06, -0.4));
+// shadow-side + rim sliver — fakes volume without real lighting
+creature.add(flatMesh(ellipseShape(0.34, 0.28), INK, 0.1, -0.14, -0.39, 0.08));
+creature.add(flatMesh(archShape(0.16, 0.22, 0.7), CREAM, -0.2, -0.28, -0.39, 0.35));
+
+// tiny paws
+const pawL = flatMesh(ellipseShape(0.08, 0.06), BODY, -0.16, -0.3, -0.2);
+const pawR = flatMesh(ellipseShape(0.08, 0.06), BODY, 0.16, -0.3, -0.2);
+creature.add(pawL, pawR);
+[-1, 1].forEach((s) => {
+    for (let i = -1; i <= 1; i++) {
+        creature.add(tinyBar(0.009, 0.03, INK, s * 0.16 + i * 0.038, -0.26, -0.19, 0));
+    }
+});
+
+// chest gem — small glowing core + faked bloom rings
+const gemX = 0, gemY = 0.06, gemZ = -0.38;
+creature.add(glow(0.26, 0.26, MANE_LIGHT, 0.06, gemX, gemY, gemZ - 0.01));
+creature.add(glow(0.15, 0.15, MANE_LIGHT, 0.14, gemX, gemY, gemZ));
+const gemCore = flatMesh(ellipseShape(0.05, 0.05), 0xfff4de, gemX, gemY, gemZ + 0.01);
+creature.add(gemCore);
+
+// orbiting motes — lazy, glowing, wide loop around the whole body
+const MOTE_N = 10;
+const motes = [];
+for (let i = 0; i < MOTE_N; i++) {
+    const m = glow(0.035, 0.035, i % 2 === 0 ? MANE_LIGHT : BODY, 0.5, 0, 0, -0.55);
+    m.userData = {
+        radiusX: 0.75 + Math.random() * 0.35,
+        radiusY: 0.55 + Math.random() * 0.3,
+        speed: 0.12 + Math.random() * 0.14,
+        phase: Math.random() * Math.PI * 2,
+        yBase: -0.1 + Math.random() * 0.7,
+    };
+    motes.push(m);
+    creature.add(m);
+}
+
+// head — big, dominant, holds the mane
+const head = new THREE.Group();
+head.position.set(0, 0.5, -0.3);
+
+// mane: a recessed shadow base (shows through the gaps between clumps),
+// a ring of large individually-readable fur clumps alternating between
+// two navy tones (the alternation is what actually sells "fur" instead
+// of "one blob with bumps"), fine strand dashes for texture, then a
+// lighter inner ring for the two-tone band near the face.
+const maneGroup = new THREE.Group();
+maneGroup.add(flatMesh(ellipseShape(0.62, 0.6), MANE_SHADOW, 0, 0.0, -0.18));
+
+const maneLobes = [];
+const LOBE_CFG = [
+    { a: -100, r: 0.50, size: 0.30 }, { a: -68, r: 0.57, size: 0.25 },
+    { a: -34, r: 0.52, size: 0.29 },  { a: 0,   r: 0.58, size: 0.26 },
+    { a: 34,  r: 0.51, size: 0.30 },  { a: 68,  r: 0.57, size: 0.24 },
+    { a: 100, r: 0.52, size: 0.28 },  { a: 136, r: 0.56, size: 0.25 },
+    { a: 172, r: 0.50, size: 0.29 },  { a: -172, r: 0.55, size: 0.26 },
+    { a: -136, r: 0.51, size: 0.29 },
+];
+LOBE_CFG.forEach((cfg, i) => {
+    const rad = (cfg.a * Math.PI) / 180;
+    const tone = i % 2 === 0 ? MANE_DARK : MANE_DARK2;
+    const lobe = flatMesh(
+        ellipseShape(cfg.size, cfg.size), tone,
+        Math.cos(rad) * cfg.r, Math.sin(rad) * cfg.r * 0.96 + 0.02, -0.15,
+    );
+    lobe.userData.phase = i * 0.9;
+    maneLobes.push(lobe);
+    maneGroup.add(lobe);
+});
+
+// fur-strand dashes, radiating outward through the clump band
+const STRANDS = 18;
+for (let i = 0; i < STRANDS; i++) {
+    const rad = (i / STRANDS) * Math.PI * 2 + 0.3;
+    const r = 0.4 + (i % 2) * 0.09;
+    const light = i % 5 === 0;
+    maneGroup.add(tinyBar(
+        0.012, light ? 0.07 : 0.055, light ? MANE_LIGHT : MANE_SHADOW,
+        Math.cos(rad) * r, Math.sin(rad) * r * 0.96 + 0.02, -0.13, rad + Math.PI / 2,
+    ));
+}
+
+maneGroup.add(flatMesh(ellipseShape(0.44, 0.42), MANE_LIGHT, 0, 0.0, -0.09));
+head.add(maneGroup);
+
+// ears — sit in the mane near the top; a twitch pokes one up
+function buildEar(sign) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sign * 0.33, 0.48, -0.08);
+    pivot.userData.restY = pivot.position.y;
+    pivot.add(flatMesh(ellipseShape(0.1, 0.12), BODY_SHADE, 0, 0, 0));
+    pivot.add(flatMesh(ellipseShape(0.055, 0.07), CREAM, 0, -0.01, 0.01));
+    return pivot;
+}
+const earL = buildEar(-1);
+const earR = buildEar(1);
+head.add(earL, earR);
+
+// face — kept small and centred inside the mane (head reads big; face doesn't)
+head.add(flatMesh(ellipseShape(0.34, 0.33), BODY, 0, -0.02, 0));
+head.add(flatMesh(ellipseShape(0.25, 0.2), CREAM, 0, -0.1, 0.01));
+head.add(flatMesh(ellipseShape(0.3, 0.29), INK, 0.09, -0.02, 0.005, 0.06));
+
+// fur-tuft dashes: forehead cowlick + cheek flecks
+[[-0.05, 0.22, 0.3], [0, 0.25, 0], [0.05, 0.22, -0.3]].forEach(([dx, dy, rot]) => {
+    head.add(tinyBar(0.013, 0.05, INK, dx, dy, 0.02, rot));
+});
+[-1, 1].forEach((s) => {
+    [-0.02, -0.07].forEach((dy) => {
+        head.add(tinyBar(0.011, 0.036, INK, s * 0.22, dy, 0.02, s * 0.5));
+    });
+});
+
+// --- expressive face: eyebrows + swappable eyes / mouth / prop -------
+
+const browL = tinyBar(0.09, 0.016, INK, -0.12, 0.14, 0.03, 0.12);
+const browR = tinyBar(0.09, 0.016, INK, 0.12, 0.14, 0.03, -0.12);
+head.add(browL, browR);
+
+const eyesClosed = group(
+    flatMesh(archShape(0.12, 0.07), INK, -0.11, 0.0, 0.03),
+    flatMesh(archShape(0.12, 0.07), INK, 0.11, 0.0, 0.03),
+);
+const eyesOpen = group(
+    flatMesh(ellipseShape(0.045, 0.05), INK, -0.11, 0.0, 0.03),
+    flatMesh(ellipseShape(0.045, 0.05), INK, 0.11, 0.0, 0.03),
+    flatMesh(ellipseShape(0.014, 0.014), 0xffffff, -0.1, 0.012, 0.031),
+    flatMesh(ellipseShape(0.014, 0.014), 0xffffff, 0.12, 0.012, 0.031),
+);
+const eyesHappy = group(
+    flatMesh(archShape(0.14, 0.1), INK, -0.11, -0.005, 0.03),
+    flatMesh(archShape(0.14, 0.1), INK, 0.11, -0.005, 0.03),
+);
+[eyesOpen, eyesHappy].forEach((g) => { g.visible = false; g.scale.set(0.01, 0.01, 0.01); });
+head.add(eyesClosed, eyesOpen, eyesHappy);
+
+const mouthContent = flatMesh(archShape(0.09, 0.04), INK, 0, -0.15, 0.03);
+const mouthFlat = tinyBar(0.06, 0.014, INK, 0, -0.15, 0.03, 0);
+const mouthSmile = flatMesh(archShape(0.13, 0.07), INK, 0, -0.16, 0.03);
+[mouthFlat, mouthSmile].forEach((m) => { m.visible = false; m.scale.set(0.01, 0.01, 0.01); });
+head.add(mouthContent, mouthFlat, mouthSmile);
+
+// nose
+head.add(flatMesh(ellipseShape(0.04, 0.03), INK, 0, -0.09, 0.03));
+
+// cheek freckles
+[-1, 1].forEach((s) => {
+    [[0.1, 0.03], [0.15, -0.02], [0.07, -0.06]].forEach(([dx, dy]) => {
+        head.add(flatMesh(ellipseShape(0.014, 0.014), CREAM, s * dx, -0.1 + dy, 0.03));
+    });
+});
+
+// props — pop above the head per state
+const propThought = group(
+    flatMesh(ellipseShape(0.02, 0.02), INK, 0.06, 0.72, 0.05),
+    flatMesh(ellipseShape(0.032, 0.032), INK, 0.11, 0.82, 0.05),
+    flatMesh(ellipseShape(0.05, 0.05), INK, 0.17, 0.96, 0.05),
+);
+const propGear = new THREE.Group();
+propGear.position.set(0, 0.95, 0.05);
+for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const t = tinyBar(0.03, 0.05, MANE_LIGHT, Math.cos(a) * 0.09, Math.sin(a) * 0.09, 0, a);
+    propGear.add(t);
+}
+propGear.add(flatMesh(ellipseShape(0.05, 0.05), CREAM, 0, 0, 0.01));
+const propStar = group(
+    flatMesh(starShape(0.07), MANE_LIGHT, 0, 0.92, 0.05),
+    flatMesh(starShape(0.04), BODY, 0.13, 0.8, 0.05),
+);
+[propThought, propGear, propStar].forEach((p) => { p.visible = false; p.scale.set(0.01, 0.01, 0.01); });
+head.add(propThought, propGear, propStar);
+
+creature.add(head);
+
+const scene = new THREE.Scene();
+scene.add(creature);
+
+const canvas = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+const VIEW_H = 2.9;
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+camera.position.set(0, 0.2, 5);
+
+function size() {
+    const r = canvas.parentElement.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    renderer.setSize(r.width, r.height, false);
+    const aspect = r.width / r.height;
+    const viewW = VIEW_H * aspect;
+    camera.left = -viewW / 2;
+    camera.right = viewW / 2;
+    camera.top = VIEW_H / 2;
+    camera.bottom = -VIEW_H / 2;
+    camera.updateProjectionMatrix();
+}
+size();
+window.addEventListener('resize', size);
+
+// ── idle life: ear twitch + tail flick keep running under every state ──
+function scheduleEarTwitch() {
+    const delay = 2 + Math.random() * 3;
+    gsap.delayedCall(delay, () => {
+        const ear = Math.random() < 0.5 ? earL : earR;
+        gsap.timeline({ onComplete: scheduleEarTwitch })
+            .to(ear.position, { y: ear.userData.restY + 0.06, duration: 0.28, ease: 'back.out(2)' })
+            .to(ear.scale, { x: 1.15, y: 1.15, duration: 0.28, ease: 'back.out(2)' }, '<')
+            .to(ear.position, { y: ear.userData.restY, duration: 0.5, ease: 'power2.inOut' }, '+=0.35')
+            .to(ear.scale, { x: 1, y: 1, duration: 0.5, ease: 'power2.inOut' }, '<');
+    });
+}
+
+function scheduleTailFlick() {
+    const delay = 3.5 + Math.random() * 4;
+    gsap.delayedCall(delay, () => {
+        gsap.timeline({ onComplete: scheduleTailFlick })
+            .to(tailPivot.userData, { flick: 0.5, duration: 0.4, ease: 'power2.out' })
+            .to(tailPivot.userData, { flick: 0, duration: 0.9, ease: 'elastic.out(1, 0.4)' });
+    });
+}
+tailPivot.userData.flick = 0;
+
+// ── state machine: waiting → thinking → tool → done → repeat ──────────
+const STATES = {
+    waiting:  { brow: { l: 0.12, r: -0.12, y: 0.14 }, eyes: eyesClosed, mouth: mouthContent, prop: null,
+                label: ['idle', 'waiting for input'] },
+    thinking: { brow: { l: 0.05, r: -0.4, y: 0.19 },  eyes: eyesOpen,   mouth: mouthFlat,    prop: propThought,
+                label: ['active', 'thinking it through'] },
+    tool:     { brow: { l: -0.1, r: 0.1, y: 0.1 },    eyes: eyesOpen,   mouth: mouthFlat,    prop: propGear,
+                label: ['active', 'using a tool'] },
+    done:     { brow: { l: 0.18, r: -0.18, y: 0.17 }, eyes: eyesHappy,  mouth: mouthSmile,   prop: propStar,
+                label: ['idle', 'responded'] },
+};
+const STATE_ORDER = ['waiting', 'thinking', 'tool', 'done'];
+const DURATIONS = { waiting: 4.5, thinking: 3, tool: 3, done: 2.4 };
+
+const hudState = document.getElementById('hud-state');
+const hudDetail = document.getElementById('hud-detail');
+let activeEyes = eyesClosed, activeMouth = mouthContent, activeProp = null;
+
+function popIn(obj) {
+    obj.visible = true;
+    gsap.to(obj.scale, { x: 1, y: 1, z: 1, duration: 0.3, ease: 'back.out(2.4)' });
+}
+function popOut(obj) {
+    if (!obj) return;
+    gsap.to(obj.scale, { x: 0.01, y: 0.01, z: 0.01, duration: 0.18, ease: 'power2.in', onComplete: () => { obj.visible = false; } });
+}
+
+function applyState(name) {
+    const s = STATES[name];
+    hudState.textContent = s.label[0];
+    hudDetail.textContent = s.label[1];
+
+    gsap.to(browL.rotation, { z: s.brow.l, duration: 0.4, ease: 'power2.inOut' });
+    gsap.to(browR.rotation, { z: s.brow.r, duration: 0.4, ease: 'power2.inOut' });
+    gsap.to(browL.position, { y: s.brow.y, duration: 0.4, ease: 'power2.inOut' });
+    gsap.to(browR.position, { y: s.brow.y, duration: 0.4, ease: 'power2.inOut' });
+
+    if (activeEyes !== s.eyes) { popOut(activeEyes); popIn(s.eyes); activeEyes = s.eyes; }
+    if (activeMouth !== s.mouth) { popOut(activeMouth); popIn(s.mouth); activeMouth = s.mouth; }
+    if (activeProp !== s.prop) { popOut(activeProp); if (s.prop) popIn(s.prop); activeProp = s.prop; }
+}
+
+let stateIdx = 0;
+function cycleStates() {
+    const name = STATE_ORDER[stateIdx];
+    applyState(name);
+    gsap.delayedCall(DURATIONS[name], () => {
+        stateIdx = (stateIdx + 1) % STATE_ORDER.length;
+        cycleStates();
+    });
+}
+
+if (!REDUCED_MOTION) {
+    scheduleEarTwitch();
+    scheduleTailFlick();
+    cycleStates();
+} else {
+    applyState('waiting');
+    eyesClosed.children.forEach((m) => { m.scale.y = 0.85; });
+}
+
+const clock = new THREE.Clock();
+let rafId = null;
+
+function frame() {
+    rafId = requestAnimationFrame(frame);
+    const t = clock.getElapsedTime() * (REDUCED_MOTION ? 0.15 : 1);
+
+    const breathe = Math.sin(t * 1.1) * 0.014;
+    creature.scale.set(1, 1 + breathe, 1);
+    creature.position.y = Math.sin(t * 0.55) * 0.02;
+
+    // mane compresses/expands a touch more than the body, plus a soft
+    // per-lobe wobble so the fur doesn't feel like static geometry
+    maneGroup.scale.set(1 + breathe * 0.6, 1 + breathe * 1.8, 1);
+    maneLobes.forEach((lobe) => {
+        const s = 1 + Math.sin(t * 1.6 + lobe.userData.phase) * 0.035;
+        lobe.scale.set(s, s, 1);
+    });
+
+    const pulse = 0.75 + 0.25 * Math.sin(t * 1.8);
+    gemCore.scale.setScalar(0.9 + pulse * 0.15);
+
+    tailPivot.rotation.z = Math.sin(t * 0.9) * 0.1 - tailPivot.userData.flick;
+
+    motes.forEach((m) => {
+        const { radiusX, radiusY, speed, phase, yBase } = m.userData;
+        const a = t * speed + phase;
+        m.position.set(Math.cos(a) * radiusX, yBase + Math.sin(a) * radiusY * 0.5, -0.55 + Math.sin(a * 0.5) * 0.2);
+        m.material.opacity = 0.25 + 0.25 * (0.5 + 0.5 * Math.sin(a * 2.0));
+    });
+
+    // gear prop spins slowly while it's the active one
+    if (propGear.visible) propGear.rotation.z = t * 0.6;
+    if (propThought.visible) propThought.position.y = Math.sin(t * 1.4) * 0.02;
+    if (propStar.visible) propStar.rotation.z = Math.sin(t * 1.2) * 0.12;
+
+    renderer.render(scene, camera);
+}
+frame();
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+    } else if (rafId === null) {
+        clock.getDelta();
+        frame();
+    }
+});
+
+gsap.from('h1', { opacity: 0, y: 16, duration: 0.9, ease: 'power3.out' });
+gsap.from('.rounded-panel', { opacity: 0, y: 24, duration: 0.9, ease: 'power3.out', delay: 0.1 });
+</script>
+</body>
+</html>

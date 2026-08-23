@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "node src-tauri/scripts/fetch-gh.mjs && node src-tauri/scripts/fetch-git.mjs && node scripts/ensure-dev-resources.mjs && pnpm run dev:frontend",
+    "beforeDevCommand": "node src-tauri/scripts/fetch-gh.mjs && node src-tauri/scripts/fetch-git.mjs && node scripts/ensure-dev-resources.mjs && node scripts/sync-presenting-template-thumbnails.mjs && node scripts/sync-presenting-icons.mjs && pnpm run dev:frontend",
     "beforeBuildCommand": "node src-tauri/scripts/fetch-node.mjs && node src-tauri/scripts/fetch-gh.mjs && node src-tauri/scripts/fetch-git.mjs && node scripts/prebuild.mjs && pnpm run build:frontend"
   },
   "app": {
@@ -44,7 +44,7 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
-    "resources": ["agent-sidecar/index.cjs", "binaries/node*", "binaries/npm/**/*", "binaries/gh/gh", "binaries/gh/gh-arm64", "binaries/gh/gh-x64", "binaries/git/git", "binaries/git/git-arm64", "binaries/git/git-x64"],
+    "resources": ["agent-sidecar/index.cjs", "presenting-runtime/**/*", "binaries/node*", "binaries/npm/**/*", "binaries/gh/gh", "binaries/gh/gh-arm64", "binaries/gh/gh-x64", "binaries/git/git", "binaries/git/git-arm64", "binaries/git/git-x64"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

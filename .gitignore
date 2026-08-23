@@ -18,6 +18,9 @@ package-lock.json
 # Bundled node/git/gh/npm binaries — fetched/stubbed at build/dev time by
 # src-tauri/scripts/fetch-*.mjs and scripts/ensure-dev-resources.mjs.
 /src-tauri/binaries
+/src-tauri/presenting-engine
+/src-tauri/presenting-runtime
+/.build
 *.tsbuildinfo
 /coverage
 /playwright-report
@@ -27,3 +30,7 @@ package-lock.json
 
 # Embedded Anthropic API key (injected into the sidecar bundle at build time; not committed)
 anthropic-api-key
+
+# Preset template thumbnails synced from hypatia-backend by
+# scripts/sync-presenting-template-thumbnails.mjs
+/public/presenting-templates

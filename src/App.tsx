@@ -23,6 +23,7 @@ import {
 import { findModel, modelKey } from "@/lib/model-key";
 import { trackEvent } from "@/lib/telemetry";
 import { PlaygroundPanel, PlaygroundReopenTab } from "@/playground/PlaygroundPanel";
+import { PresentingPanel } from "@/presenting/PresentingPanel";
 import type { ChatMessage } from "@/types";
 import type { Command } from "@/types/commands";
 import type { PlaygroundArtifactPayload } from "@/types/playground";
@@ -95,8 +96,10 @@ function App() {
 	const handleChangeView = useCallback((view: string) => {
 		setSidebarView(view);
 		setShowSettings(view === "settings");
+		setShowPresenting(view === "presenting");
 	}, []);
 	const [showSettings, setShowSettings] = useState(false);
+	const [showPresenting, setShowPresenting] = useState(false);
 	const [showModelSelector, setShowModelSelector] = useState(false);
 	const [showHelp, setShowHelp] = useState(false);
 	// Playground panel: user can dismiss it, but each new turn gets a fresh
@@ -779,6 +782,7 @@ function App() {
 		pinned: s.pinned,
 		titleLocked: s.titleLocked,
 	}));
+	const presentingModel = findModel(models, activeModelId);
 
 	return (
 		// The app is scaled with CSS `zoom` (font-size presets). Because `zoom`
@@ -835,16 +839,16 @@ function App() {
 							sessions={sidebarSessions}
 							activeSessionId={activeSessionFile || undefined}
 							onSessionSelect={(id) => {
-								setSidebarView("chats");
+								handleChangeView("chats");
 								handleSessionSelect(id);
 							}}
 							onNewSession={() => {
-								setSidebarView("chats");
+								handleChangeView("chats");
 								// "New" starts a session in the configured Hypatia Cowork folder — no folder prompt.
 								handleNewSession();
 							}}
 							onOpenSession={() => {
-								setSidebarView("chats");
+								handleChangeView("chats");
 								// "Open" picks a folder for the agent to work in.
 								handleNewSessionPrompt();
 							}}
@@ -873,9 +877,11 @@ function App() {
 								? "splash"
 								: showSettings
 									? "settings"
-									: loadingSession
-										? "loading"
-										: "chat"
+									: showPresenting
+										? "presenting"
+										: loadingSession
+											? "loading"
+											: "chat"
 						}
 						className="flex-1 flex flex-col min-h-0 animate-fade-in"
 					>
@@ -888,6 +894,8 @@ function App() {
 									setSidebarView("chats");
 								}}
 							/>
+						) : showPresenting ? (
+							<PresentingPanel provider={presentingModel?.provider} model={presentingModel?.id} />
 						) : loadingSession ? (
 							<div className="flex-1 flex flex-col items-center justify-center gap-4">
 								<div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />

@@ -1,4 +1,4 @@
-import { Settings } from "lucide-react";
+import { Presentation, Settings } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { ConversationSearch, type DeepSearchMatch } from "./ConversationSearch";
 
@@ -91,11 +91,30 @@ export function Sidebar({
 				/>
 			</div>
 
-			{/* ── Settings footer ── */}
+			{/* ── Workspace navigation footer ── */}
 			<div
-				className="shrink-0 px-3 py-2"
+				className="shrink-0 px-3 py-2 space-y-0.5"
 				style={{ borderTop: "1px solid hsl(var(--sidebar-border))" }}
 			>
+				<motion.button
+					type="button"
+					onClick={() => onChangeView("presenting")}
+					className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] transition-colors"
+					style={{ color: "hsl(var(--sidebar-foreground) / 0.45)" }}
+					whileHover={
+						reduced
+							? {}
+							: {
+									color: "hsl(var(--sidebar-foreground))",
+									background: "hsl(var(--sidebar-accent) / 0.5)",
+								}
+					}
+					whileTap={reduced ? {} : { scale: 0.97 }}
+					transition={{ duration: 0.15, ease: easeOutExpo }}
+				>
+					<Presentation className="w-3.5 h-3.5 shrink-0" />
+					PowerPoint Builder
+				</motion.button>
 				<motion.button
 					type="button"
 					onClick={() => onChangeView("settings")}

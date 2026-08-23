@@ -27,6 +27,18 @@ struct SidecarState {
     ready: Arc<AtomicBool>,
 }
 
+/// The Presenting Engine (Python, hypatia-backend/presenting/engine/) — a
+/// second, independent child process for the Hypatia PowerPoint Builder
+/// feature. Deliberately NOT named "sidecar" (that name is reserved for the
+/// Node process above — two same-named processes owned by the same Rust
+/// host is exactly the collision hypatia-backend/presenting/CONTEXT.md warns
+/// against). Same shape as SidecarState — own stdin handle, own readiness
+/// flag, own boot/retry lifecycle — but never receives model credentials;
+/// its only path to an LLM is relaying through SidecarState's stdin. See
+/// hypatia-backend/docs/adr/0002-presenting-model-calls-relay-via-rust-host.md.
+// PresentingState (Python engine state) removed — Phase 7 cleanup.
+// All presenting_* commands now route through the Node sidecar.
+
 struct PendingPrompt {
     channel: Channel<Value>,
     /// Which agent session this prompt belongs to — used to filter the
@@ -47,6 +59,7 @@ struct AppState {
     sidecar: SidecarState,
     pending_prompts: Arc<Mutex<HashMap<String, PendingPrompt>>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingRequest>>>,
+    // presenting: PresentingState — removed Phase 7; Python engine is gone
 }
 
 /// Strip the Windows `\\?\` extended-length path prefix.
@@ -318,6 +331,13 @@ fn find_node(app: &tauri::AppHandle) -> PathBuf {
         PathBuf::from("node")
     }
 }
+
+/// Locate the Presenting Engine's `main.py` for dev mode — sibling-checkout
+// ── Python Presenting Engine helpers removed (Phase 7 cleanup) ──────────────
+// find_presenting_engine_dev_entry, find_presenting_engine_path, find_python,
+// parse_presenting_level, spawn_presenting_engine — all deleted.
+// The Python subprocess is gone; all presenting_* Tauri commands now route
+// through the Node sidecar (see handler-registry.ts).
 
 /// Split a sidecar stderr line `[sidecar:LEVEL] message` into (level, message).
 /// Returns ("info", line) when the prefix is missing or malformed.
@@ -686,50 +706,79 @@ async fn read_stdout(
     log::warn!("Sidecar stdout closed");
 }
 
-async fn scmd(state: &AppState, m: &Value) -> Result<(), String> {
-    let mut s = state.sidecar.stdin.lock().await;
+/// Relay one `model_call_request` line from the Presenting Engine into the
+/// existing Node sidecar's stdio protocol as a `complete_model_call`
+/// command, then write the result back onto the Presenting Engine's OWN
+// relay_model_call and read_presenting_stdout removed (Phase 7 cleanup).
+// The Python engine stdout reader and model-call relay are no longer needed.
+
+/// Write one JSON line to a child process's stdin. Generalized over which
+/// process's stdin — both `SidecarState` (Node) and `PresentingState`
+/// (Python) write through this, so the write/flush/error-handling logic
+/// lives in exactly one place instead of being duplicated per process.
+async fn write_line(
+    stdin: &Mutex<Option<tokio::process::ChildStdin>>,
+    m: &Value,
+) -> Result<(), String> {
+    let mut s = stdin.lock().await;
     let i = s.as_mut().ok_or_else(|| {
-        log::error!("scmd: no sidecar (stdin is None) for msg={m}");
-        "no sidecar".to_string()
+        log::error!("write_line: no stdin for msg={m}");
+        "no stdin".to_string()
     })?;
     let l = format!("{}\n", serde_json::to_string(m).map_err(|e| e.to_string())?);
     let kind = m.get("type").and_then(|v| v.as_str()).unwrap_or("?");
     let id = m.get("id").and_then(|v| v.as_str()).unwrap_or("-");
     if let Err(e) = i.write_all(l.as_bytes()).await {
         log::error!(
-            "scmd[{kind}/{id}]: write_all FAILED: {e} (raw os err: {:?})",
+            "write_line[{kind}/{id}]: write_all FAILED: {e} (raw os err: {:?})",
             e.raw_os_error()
         );
         return Err(e.to_string());
     }
     if let Err(e) = i.flush().await {
         log::error!(
-            "scmd[{kind}/{id}]: flush FAILED: {e} (raw os err: {:?})",
+            "write_line[{kind}/{id}]: flush FAILED: {e} (raw os err: {:?})",
             e.raw_os_error()
         );
         return Err(e.to_string());
     }
-    log::debug!("scmd[{kind}/{id}]: sent ({} bytes)", l.len());
+    log::debug!("write_line[{kind}/{id}]: sent ({} bytes)", l.len());
     Ok(())
 }
 
-async fn scmd_r(state: &AppState, m: &Value, t: std::time::Duration) -> Result<Value, String> {
+/// Write a request-shaped line and await its correlated `result`/`error`
+/// response via `pending`, keyed by the message's own `id`. Generalized the
+/// same way as `write_line` — both processes' request/response cycles share
+/// this.
+async fn write_line_request(
+    stdin: &Mutex<Option<tokio::process::ChildStdin>>,
+    pending: &Mutex<HashMap<String, PendingRequest>>,
+    m: &Value,
+    t: std::time::Duration,
+) -> Result<Value, String> {
     let id = m
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or("no id")?
         .to_string();
     let (tx, rx) = oneshot::channel();
-    state
-        .pending_requests
+    pending
         .lock()
         .await
         .insert(id, PendingRequest { sender: tx });
-    scmd(state, m).await?;
+    write_line(stdin, m).await?;
     tokio::time::timeout(t, rx)
         .await
         .map_err(|_| "timeout".to_string())?
         .map_err(|_| "closed".to_string())?
+}
+
+async fn scmd(state: &AppState, m: &Value) -> Result<(), String> {
+    write_line(&state.sidecar.stdin, m).await
+}
+
+async fn scmd_r(state: &AppState, m: &Value, t: std::time::Duration) -> Result<Value, String> {
+    write_line_request(&state.sidecar.stdin, &state.pending_requests, m, t).await
 }
 
 #[tauri::command]
@@ -788,6 +837,314 @@ async fn abort_prompt(session_id: String, s: State<'_, AppState>) -> Result<(), 
     scmd(
         &s,
         &serde_json::json!({"type":"abort","id":id,"sessionId":session_id}),
+    )
+    .await
+}
+
+// ── Presenting Engine (Hypatia PowerPoint Builder) ─────────────────────────
+
+/// Pure liveness check — round-trips through the Presenting Engine's stdio
+/// protocol with no model call involved. Confirms the process is up and the
+/// protocol works; does NOT prove the relay mechanism works (see
+/// `presenting_test_relay` for that).
+#[tauri::command]
+async fn presenting_ping(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("pp-{}", next_request_id());
+    // Phase 1 migration: route through the Node sidecar (TypeScript handler)
+    // instead of the Python process.
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({"type":"presenting_ping","id":id}),
+        std::time::Duration::from_secs(10),
+    )
+    .await
+}
+
+/// The real Phase 1 smoke test: asks the Presenting Engine to run one real
+/// model completion via the relay (Python -> here -> the Node sidecar's
+/// ModelRuntime -> back). `provider`/`model` must match a model the Node
+/// sidecar actually has credentials for.
+#[tauri::command]
+async fn presenting_test_relay(
+    provider: String,
+    model: String,
+    text: Option<String>,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("ptr-{}", next_request_id());
+    // Phase 7 migration: Python relay is gone; route through the sidecar's
+    // own model-call plumbing directly.
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({"type":"presenting_ping","id":id,"provider":provider,"model":model,"text":text}),
+        std::time::Duration::from_secs(120),
+    )
+    .await
+}
+
+/// Generate a full presentation: prompt + a bundled preset template name ->
+/// a filled, layout-bound slide deck. Runs several sequential model calls
+/// (outline, structure/layout selection, one per slide's content) through
+/// the relay, so this needs a generous timeout — plain request/response for
+/// v1, no intermediate progress streaming yet (see
+/// `commands/handlers/generation.py`'s doc comment).
+#[allow(clippy::too_many_arguments)]
+#[tauri::command]
+async fn presenting_start_generation(
+    content: String,
+    template: String,
+    provider: String,
+    model: String,
+    n_slides: Option<u32>,
+    language: Option<String>,
+    tone: Option<String>,
+    verbosity: Option<String>,
+    instructions: Option<String>,
+    include_title_slide: Option<bool>,
+    include_table_of_contents: Option<bool>,
+    document_text: Option<String>,
+    document_name: Option<String>,
+    web_search: Option<bool>,
+    web_search_provider: Option<String>,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("psg-{}", next_request_id());
+    // Phase 1/2 migration: route through the Node sidecar (TypeScript handler)
+    // instead of the Python process.
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_start_generation",
+            "id":id,
+            "content":content,
+            "template":template,
+            "provider":provider,
+            "model":model,
+            "nSlides":n_slides,
+            "language":language,
+            "tone":tone,
+            "verbosity":verbosity,
+            "instructions":instructions,
+            "includeTitleSlide":include_title_slide.unwrap_or(true),
+            "includeTableOfContents":include_table_of_contents.unwrap_or(false),
+            "documentText":document_text,
+            "documentName":document_name,
+            "webSearch":web_search.unwrap_or(false),
+            "webSearchProvider":web_search_provider,
+        }),
+        std::time::Duration::from_secs(600),
+    )
+    .await
+}
+
+/// One chat-driven edit turn against an existing (already-generated)
+/// presentation — may run several sequential tool-calling rounds through the
+/// relay before returning, hence the generous timeout, same as generation.
+#[tauri::command]
+async fn presenting_chat_edit(
+    presentation_id: String,
+    message: String,
+    provider: String,
+    model: String,
+    conversation_id: Option<String>,
+    attachments: Option<Value>,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("pce-{}", next_request_id());
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_chat_edit",
+            "id":id,
+            "presentationId":presentation_id,
+            "message":message,
+            "provider":provider,
+            "model":model,
+            "conversationId":conversation_id,
+            "attachments":attachments,
+        }),
+        std::time::Duration::from_secs(600),
+    )
+    .await
+}
+
+/// Uploaded Template path, extraction step: turn an arbitrary user-picked
+/// file into extracted text. The frontend then passes that text as
+/// `content` into `presenting_start_generation` — no separate "uploaded"
+/// generation mode, both entry paths converge once there's a content string.
+#[tauri::command]
+async fn presenting_parse_document(
+    file_path: String,
+    language: Option<String>,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("ppd-{}", next_request_id());
+    // Phase 6 migration: route through the Node sidecar (TypeScript handler).
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_parse_document",
+            "id":id,
+            "filePath":file_path,
+            "language":language,
+        }),
+        std::time::Duration::from_secs(300),
+    )
+    .await
+}
+
+/// Export a generated presentation to a real .pptx file. `output_path` is
+/// required, not defaulted here — this Rust layer stays a thin relay (per
+/// this repo's own convention); the caller resolves the HypatiaCoWork
+/// workspace path via the existing `get_workspace` command and builds the
+/// final path itself.
+#[tauri::command]
+async fn presenting_export_presentation(
+    presentation_id: String,
+    output_path: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("pep-{}", next_request_id());
+    // Phase 6 migration: route through the Node sidecar (TypeScript handler).
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_export_presentation",
+            "id":id,
+            "presentationId":presentation_id,
+            "outputPath":output_path,
+        }),
+        std::time::Duration::from_secs(180),
+    )
+    .await
+}
+
+/// Retrieve a persisted presentation from the Presenting Engine's ephemeral
+/// SQLite store. Called after every `chat_edit` turn to rehydrate the editor
+/// with the mutated deck — `chat_edit` itself only returns a brief status, so
+/// the frontend must pull the full deck separately.
+///
+/// Response `data` mirrors `presenting_start_generation`'s result shape
+/// (title, template, language, slides[], presentation_id).
+#[tauri::command]
+async fn presenting_get_presentation(
+    presentation_id: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("pgp-{}", next_request_id());
+    // Phase 1 migration: route through the Node sidecar (TypeScript handler)
+    // instead of the Python process.
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type": "presenting_get_presentation",
+            "id": id,
+            "presentationId": presentation_id,
+        }),
+        std::time::Duration::from_secs(30),
+    )
+    .await
+}
+
+/// Direct (non-LLM) call into one of the ~137 editing tools — the WYSIWYG
+/// editor's own micro-interactions (drag, resize, type). Distinct from
+/// `presenting_chat_edit`: no model call, no conversation history, just
+/// "run this tool with these arguments right now."
+#[tauri::command]
+async fn presenting_edit_slide(
+    presentation_id: String,
+    tool: String,
+    args: Value,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("pes-{}", next_request_id());
+    // Phase 7 migration: route through the Node sidecar (TypeScript handler).
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_edit_slide",
+            "id":id,
+            "presentationId":presentation_id,
+            "tool":tool,
+            "args":args,
+        }),
+        std::time::Duration::from_secs(60),
+    )
+    .await
+}
+
+/// Import a user-uploaded .pptx as a new Imported Template: the engine
+/// vision/LLM-analyzes its design (one model call per slide) and produces a
+/// workspace-scoped template. Distinct from `presenting_parse_document`
+/// (Uploaded Template's content-extraction path) — this extracts *design*,
+/// not text, and the result becomes a new, reusable template rather than
+/// generation input. Plain request/response for v1, no intermediate
+/// progress streaming yet (same as `presenting_start_generation`).
+#[tauri::command]
+async fn presenting_import_template(
+    pptx_path: String,
+    name: Option<String>,
+    provider: String,
+    model: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("pit-{}", next_request_id());
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_import_template",
+            "id":id,
+            "pptxPath":pptx_path,
+            "name":name,
+            "provider":provider,
+            "model":model,
+        }),
+        std::time::Duration::from_secs(900),
+    )
+    .await
+}
+
+/// List every Imported Template saved for the current workspace.
+#[tauri::command]
+async fn presenting_list_imported_templates(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("plit-{}", next_request_id());
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_list_imported_templates",
+            "id":id,
+        }),
+        std::time::Duration::from_secs(30),
+    )
+    .await
+}
+
+/// Permanently delete an Imported Template.
+#[tauri::command]
+async fn presenting_delete_imported_template(
+    template_id: String,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("pdit-{}", next_request_id());
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_delete_imported_template",
+            "id":id,
+            "templateId":template_id,
+        }),
+        std::time::Duration::from_secs(30),
     )
     .await
 }
@@ -990,10 +1347,7 @@ fn get_username() -> String {
 }
 
 #[tauri::command]
-async fn list_sessions(
-    all_folders: Option<bool>,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
+async fn list_sessions(all_folders: Option<bool>, s: State<'_, AppState>) -> Result<Value, String> {
     scmd_r(
         &s,
         &serde_json::json!({"type":"list_sessions","id":"ls","allFolders":all_folders}),
@@ -1526,6 +1880,9 @@ pub fn run() {
                 }
                 log::error!("Sidecar: all {} restart attempts exhausted — app restart needed", max_retries);
             });
+
+            // Python Presenting Engine spawn loop removed (Phase 7 cleanup).
+            // All presenting_* commands now route through the Node sidecar above.
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1533,6 +1890,17 @@ pub fn run() {
             get_active_model,
             send_prompt,
             abort_prompt,
+            presenting_ping,
+            presenting_test_relay,
+            presenting_start_generation,
+            presenting_chat_edit,
+            presenting_parse_document,
+            presenting_export_presentation,
+            presenting_get_presentation,
+            presenting_edit_slide,
+            presenting_import_template,
+            presenting_list_imported_templates,
+            presenting_delete_imported_template,
             steer_prompt,
             follow_up_prompt,
             clear_queue,
@@ -1575,9 +1943,35 @@ pub fn run() {
 mod tests {
     use super::{
         build_clear_queue_payload, build_follow_up_payload, build_install_context,
-        build_steer_payload, event_targets_session, tag_with_session_id,
+        build_steer_payload, event_targets_session, parse_presenting_level, tag_with_session_id,
     };
     use serde_json::json;
+
+    // ── Presenting Engine stderr log-level parsing ──────────────────────────
+
+    #[test]
+    fn parse_presenting_level_extracts_known_levels() {
+        assert_eq!(
+            parse_presenting_level("[presenting-engine:error] boom"),
+            ("error", "boom")
+        );
+        assert_eq!(
+            parse_presenting_level("[presenting-engine:debug] verbose thing"),
+            ("debug", "verbose thing")
+        );
+    }
+
+    #[test]
+    fn parse_presenting_level_falls_back_to_info_for_unknown_or_missing_prefix() {
+        assert_eq!(
+            parse_presenting_level("no prefix here"),
+            ("info", "no prefix here")
+        );
+        assert_eq!(
+            parse_presenting_level("[presenting-engine:bogus] whatever"),
+            ("info", "[presenting-engine:bogus] whatever")
+        );
+    }
 
     // ── Multi-session event routing (docs/plans/multi-session-concurrency.md) ──
     // Regression coverage for the bug this filter fixes: before it, every

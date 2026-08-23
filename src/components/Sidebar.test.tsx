@@ -39,4 +39,11 @@ describe("Sidebar", () => {
 		fireEvent.click(screen.getByText("Settings"));
 		expect(onChangeView).toHaveBeenCalledWith("settings");
 	});
+
+	it("clicking PowerPoint Builder calls onChangeView('presenting')", () => {
+		const onChangeView = vi.fn();
+		render(<Sidebar {...baseProps} onChangeView={onChangeView} />);
+		fireEvent.click(screen.getByText("PowerPoint Builder"));
+		expect(onChangeView).toHaveBeenCalledWith("presenting");
+	});
 });
