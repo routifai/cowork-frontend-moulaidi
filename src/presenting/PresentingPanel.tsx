@@ -1,13 +1,15 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
 	ArrowLeft,
+	ArrowUp,
 	CheckCircle2,
 	Download,
 	FileUp,
 	Loader2,
-	MessageSquare,
+	Plus,
 	Presentation,
 	Sparkles,
+	X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -21,8 +23,39 @@ import {
 } from "./api/presentingApi";
 import { ImportedTemplates } from "./components/ImportedTemplates";
 import { ScaledSlideStage } from "./components/ScaledSlideStage";
+import {
+	TEMPLATE_V2_SURFACE_SELECTED_EVENT,
+	type TemplateV2SurfaceSelectedDetail,
+} from "./editor/events/events";
 import { TemplateV2KonvaSlide } from "./editor/surface/TemplateV2KonvaSlide";
 import { PresentingProvider } from "./state/PresentingProvider";
+
+// Quick-prompt suggestions shown below the composer — matches presenton's
+// editorQuickPrompts (presentation/components/chat/chat-prompts.tsx).
+const QUICK_PROMPTS = [
+	"Rewrite for executives",
+	"Improve slide layout",
+	"Add data & citations",
+	"Create speaker notes",
+	"Make the deck consistent",
+];
+
+/** Human-readable label for a Konva surface selection, e.g. "Title text" or "Image card". */
+function selectionLabel(
+	selection: NonNullable<TemplateV2SurfaceSelectedDetail["selection"]>,
+): string {
+	if (selection.kind === "multi-component") {
+		return selection.targetLabel || selection.componentLabels?.join(", ") || "Multiple components";
+	}
+	return (
+		selection.targetLabel ||
+		selection.componentLabel ||
+		selection.elementName ||
+		selection.elementType ||
+		selection.componentId ||
+		"Selected element"
+	);
+}
 
 // These ids MUST match presenting/engine/templates/ directory names exactly
 // — they're sent verbatim as the `template` param to `presenting_start_generation`.
@@ -83,6 +116,10 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 	const [chatMessage, setChatMessage] = useState("");
 	const [chatBusy, setChatBusy] = useState(false);
 	const [exportPath, setExportPath] = useState<string | null>(null);
+	const [selectedElement, setSelectedElement] = useState<{
+		slideIndex: number;
+		label: string;
+	} | null>(null);
 
 	useEffect(() => {
 		let active = true;
@@ -102,7 +139,33 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 
 	const selected = deck?.slides[selectedSlide] ?? null;
 	const canGenerate = Boolean(prompt.trim() || documentText) && Boolean(provider && model);
-	const [conversationId] = useState(() => crypto.randomUUID());
+	const [conversationId, setConversationId] = useState(() => crypto.randomUUID());
+
+	// TemplateV2KonvaSlide dispatches this on every selection change inside
+	// the editor canvas (component/element click, or deselect on empty-canvas
+	// click) — reusing it to scope the next chat-edit request to whatever the
+	// user has selected, same as presenton's chatHtmlSelection/
+	// selectedTemplateV2Target flow (never wired into this panel before).
+	useEffect(() => {
+		const handler = (event: Event) => {
+			const detail = (event as CustomEvent<TemplateV2SurfaceSelectedDetail>).detail;
+			if (!detail?.selection) {
+				setSelectedElement(null);
+				return;
+			}
+			setSelectedElement({
+				slideIndex: detail.slideIndex ?? selectedSlide,
+				label: selectionLabel(detail.selection),
+			});
+		};
+		window.addEventListener(TEMPLATE_V2_SURFACE_SELECTED_EVENT, handler);
+		return () => window.removeEventListener(TEMPLATE_V2_SURFACE_SELECTED_EVENT, handler);
+	}, [selectedSlide]);
+
+	// A selection on one slide shouldn't silently scope an edit on another.
+	useEffect(() => {
+		setSelectedElement(null);
+	}, [selectedSlide]);
 
 	const reset = () => {
 		setError(null);
@@ -168,21 +231,38 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 		if (!deck || !provider || !model || !chatMessage.trim()) return;
 		setChatBusy(true);
 		setError(null);
+		// Inline any active selection as context ahead of the user's message —
+		// same text-injection approach presenton's Chat.tsx uses (no separate
+		// wire-protocol field for "scope"; the backend only ever sees `message`).
+		const contextLines: string[] = [`UI context: this edit applies to slide ${selectedSlide + 1}.`];
+		if (selectedElement && selectedElement.slideIndex === selectedSlide) {
+			contextLines.push(
+				`The user selected "${selectedElement.label}" on this slide — edit that element/component specifically; preserve unrelated elements.`,
+			);
+		}
+		const composedMessage = [...contextLines, `User message: ${chatMessage.trim()}`].join("\n");
 		try {
 			await chatEdit({
 				presentation_id: deck.presentation_id,
 				conversation_id: conversationId,
-				message: chatMessage.trim(),
+				message: composedMessage,
 				provider,
 				model,
 			});
 			setDeck(await getPresentation(deck.presentation_id));
 			setChatMessage("");
+			setSelectedElement(null);
 		} catch (cause) {
 			setError(`Edit failed: ${errorMessage(cause)}`);
 		} finally {
 			setChatBusy(false);
 		}
+	};
+
+	const startNewChat = () => {
+		setConversationId(crypto.randomUUID());
+		setChatMessage("");
+		setSelectedElement(null);
 	};
 
 	const exportDeck = async () => {
@@ -279,39 +359,49 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 					</div>
 				)}
 				<div className="flex min-h-0 flex-1">
-					<aside className="w-44 shrink-0 overflow-y-auto border-r border-border p-3">
-						{deck.slides.map((slide, index) => (
-							<button
-								key={slide.id || index}
-								type="button"
-								onClick={() => setSelectedSlide(index)}
-								className={`mb-2 w-full rounded-lg border p-1.5 text-left ${selectedSlide === index ? "border-primary bg-primary/5" : "border-border"}`}
-							>
-								<div className="aspect-video overflow-hidden rounded bg-white">
-									{slide.ui ? (
-										<ScaledSlideStage>
-											<TemplateV2KonvaSlide
-												layout={slide.ui as never}
-												isEditMode={false}
-												slideId={slide.id}
-												presentationId={deck.presentation_id}
-												slideIndex={index}
-												isSelected={selectedSlide === index}
-											/>
-										</ScaledSlideStage>
-									) : (
-										<div className="h-full w-full overflow-hidden p-2 text-[6px] leading-tight text-slate-700">
-											{slideText(slide.content).slice(0, 180)}
-										</div>
-									)}
-								</div>
-								<span className="mt-1 block text-[10px] text-muted-foreground">
-									Slide {index + 1}
-								</span>
-							</button>
-						))}
+					<aside className="w-[150px] shrink-0 overflow-y-auto bg-muted/20 px-4 py-5">
+						<div className="space-y-[15px]">
+							{deck.slides.map((slide, index) => (
+								<button
+									key={slide.id || index}
+									type="button"
+									onClick={() => setSelectedSlide(index)}
+									className="flex h-[62px] w-full items-start justify-between gap-1.5 text-left"
+								>
+									<p
+										className={`shrink-0 text-[12px] leading-normal ${selectedSlide === index ? "font-semibold text-primary" : "font-normal text-muted-foreground"}`}
+									>
+										{index + 1}
+									</p>
+									<div
+										className={`relative h-[62px] w-[110px] shrink-0 overflow-hidden rounded bg-white transition-[border-color,box-shadow] duration-200 ${
+											selectedSlide === index
+												? "border-2 border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.16)]"
+												: "border border-border"
+										}`}
+									>
+										{slide.ui ? (
+											<ScaledSlideStage>
+												<TemplateV2KonvaSlide
+													layout={slide.ui as never}
+													isEditMode={false}
+													slideId={slide.id}
+													presentationId={deck.presentation_id}
+													slideIndex={index}
+													isSelected={selectedSlide === index}
+												/>
+											</ScaledSlideStage>
+										) : (
+											<div className="h-full w-full overflow-hidden p-2 text-[6px] leading-tight text-slate-700">
+												{slideText(slide.content).slice(0, 180)}
+											</div>
+										)}
+									</div>
+								</button>
+							))}
+						</div>
 					</aside>
-					<main className="flex min-w-0 flex-1 overflow-hidden bg-muted/30 p-8">
+					<main className="flex min-w-0 flex-1 overflow-hidden bg-muted/30 p-5">
 						{selected?.ui ? (
 							<ScaledSlideStage stageClassName="rounded-lg bg-white text-slate-900 shadow-xl">
 								<TemplateV2KonvaSlide
@@ -343,28 +433,86 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 							</div>
 						) : null}
 					</main>
-					<aside className="flex w-72 shrink-0 flex-col border-l border-border">
-						<div className="flex items-center gap-2 border-b border-border px-4 py-3 text-xs font-medium">
-							<MessageSquare className="h-4 w-4" /> Edit with AI
-						</div>
-						<div className="flex-1 p-4 text-xs text-muted-foreground">
-							Describe a change to the deck. The editor refreshes from the engine after each edit.
-						</div>
-						<div className="border-t border-border p-3">
-							<textarea
-								value={chatMessage}
-								onChange={(event) => setChatMessage(event.target.value)}
-								placeholder="Make slide 2 more concise…"
-								className="h-24 w-full resize-none rounded-lg border border-border bg-background p-2 text-xs outline-none focus:border-primary"
-							/>
+					<aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-background">
+						<div className="flex h-12 shrink-0 items-center justify-end border-b border-border px-3">
 							<button
 								type="button"
-								disabled={chatBusy || !chatMessage.trim()}
-								onClick={sendChat}
-								className="mt-2 w-full rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground disabled:opacity-50"
+								onClick={startNewChat}
+								disabled={chatBusy}
+								className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
 							>
-								{chatBusy ? "Applying…" : "Apply edit"}
+								<Plus className="h-3.5 w-3.5" />
+								New chat
 							</button>
+						</div>
+						<div className="flex min-h-0 flex-1 items-center justify-center px-6">
+							<h3 className="-translate-y-2 text-center text-[22px] font-normal leading-[1.12] tracking-[-0.02em] text-muted-foreground">
+								What can I do
+								<br />
+								for your deck today?
+							</h3>
+						</div>
+						<div className="flex shrink-0 flex-col gap-2.5 px-3 pb-3.5">
+							<div
+								className="rounded-lg border border-border bg-card px-2.5 py-3"
+								style={{ boxShadow: "0 4px 14px 0 rgba(0,0,0,0.04)" }}
+							>
+								<div className="mb-2 flex max-w-full items-center gap-1.5 overflow-hidden">
+									<span className="inline-flex h-7 max-w-[100px] shrink-0 items-center gap-1 rounded-full border border-primary/25 bg-primary/5 pl-2.5 pr-1 text-[11px] font-semibold text-primary">
+										<span className="truncate">Slide {selectedSlide + 1}</span>
+									</span>
+									{selectedElement && selectedElement.slideIndex === selectedSlide && (
+										<span className="inline-flex h-7 min-w-0 max-w-[180px] items-center gap-1 rounded-full border border-primary/30 bg-primary/10 pl-2.5 pr-1 text-[11px] font-semibold text-primary">
+											<span className="truncate">
+												Slide {selectedSlide + 1}: {selectedElement.label}
+											</span>
+											<button
+												type="button"
+												onClick={() => setSelectedElement(null)}
+												className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-primary/70 transition-colors hover:bg-primary/15 hover:text-primary"
+												aria-label="Remove selected element from context"
+												title="Remove selected element from context"
+											>
+												<X className="h-3 w-3" />
+											</button>
+										</span>
+									)}
+								</div>
+								<textarea
+									value={chatMessage}
+									onChange={(event) => setChatMessage(event.target.value)}
+									placeholder="Ask anything."
+									rows={3}
+									className="min-h-[80px] w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+								/>
+								<div className="mt-2 flex items-center justify-end">
+									<button
+										type="button"
+										disabled={chatBusy || !chatMessage.trim()}
+										onClick={sendChat}
+										className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+										aria-label="Send prompt"
+									>
+										{chatBusy ? (
+											<Loader2 className="h-4 w-4 animate-spin" />
+										) : (
+											<ArrowUp className="h-4 w-4" />
+										)}
+									</button>
+								</div>
+							</div>
+							<div className="hide-scrollbar flex gap-2 overflow-x-auto">
+								{QUICK_PROMPTS.map((qp) => (
+									<button
+										key={qp}
+										type="button"
+										onClick={() => setChatMessage(qp)}
+										className="shrink-0 rounded-full border border-border bg-background px-3 py-1.5 text-[11px] font-normal text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/5"
+									>
+										{qp}
+									</button>
+								))}
+							</div>
 						</div>
 					</aside>
 				</div>
