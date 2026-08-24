@@ -91,8 +91,10 @@ export interface ChatEditParams {
 
 export interface ChatEditResult {
 	conversation_id: string;
-	status: string;
-	message: string;
+	/** The model's text reply. Can be non-empty even when tool_calls is empty — e.g. the model explaining why it didn't make a change. */
+	response: string;
+	/** Names of the editing tools the model actually invoked. Empty means no edit was made, regardless of what `response` says. */
+	tool_calls: string[];
 }
 
 export interface EditSlideParams {
@@ -267,12 +269,16 @@ export async function importTemplate(
 
 /** List every Imported Template saved for the current workspace. */
 export async function listImportedTemplates(): Promise<ImportedTemplateSummary[]> {
-	const result = await invoke<{ templates: ImportedTemplateSummary[] }>("presenting_list_imported_templates");
+	const result = await invoke<{ templates: ImportedTemplateSummary[] }>(
+		"presenting_list_imported_templates",
+	);
 	return result.templates;
 }
 
 /** Permanently delete an Imported Template. */
 export async function deleteImportedTemplate(templateId: string): Promise<boolean> {
-	const result = await invoke<{ deleted: boolean }>("presenting_delete_imported_template", { templateId });
+	const result = await invoke<{ deleted: boolean }>("presenting_delete_imported_template", {
+		templateId,
+	});
 	return result.deleted;
 }

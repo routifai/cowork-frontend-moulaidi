@@ -2,13 +2,15 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import {
 	ArrowLeft,
 	ArrowUp,
+	ArrowUpRight,
 	CheckCircle2,
-	Download,
 	FileUp,
 	Loader2,
 	Plus,
 	Presentation,
+	Redo2,
 	Sparkles,
+	Undo2,
 	X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -120,6 +122,15 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 		slideIndex: number;
 		label: string;
 	} | null>(null);
+	const [historyCommand, setHistoryCommand] = useState<{
+		action: "undo" | "redo";
+		token: number;
+	} | null>(null);
+	const [historyAvailability, setHistoryAvailability] = useState({
+		canUndo: false,
+		canRedo: false,
+	});
+	const [lastReply, setLastReply] = useState<{ text: string; editsMade: boolean } | null>(null);
 
 	useEffect(() => {
 		let active = true;
@@ -163,8 +174,11 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 	}, [selectedSlide]);
 
 	// A selection on one slide shouldn't silently scope an edit on another.
+	// Undo/redo availability is per-slide history too — avoid a stale-enabled
+	// button flash before TemplateV2KonvaSlide reports the new slide's state.
 	useEffect(() => {
 		setSelectedElement(null);
+		setHistoryAvailability({ canUndo: false, canRedo: false });
 	}, [selectedSlide]);
 
 	const reset = () => {
@@ -242,13 +256,18 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 		}
 		const composedMessage = [...contextLines, `User message: ${chatMessage.trim()}`].join("\n");
 		try {
-			await chatEdit({
+			const result = await chatEdit({
 				presentation_id: deck.presentation_id,
 				conversation_id: conversationId,
 				message: composedMessage,
 				provider,
 				model,
 			});
+			// The model can reply with only text and zero tool calls — e.g.
+			// explaining why it didn't make a change. Previously this result was
+			// discarded entirely: the deck would silently reload unchanged and
+			// the textbox would clear, with no way to tell "no-op" from "broken."
+			setLastReply({ text: result.response, editsMade: result.tool_calls.length > 0 });
 			setDeck(await getPresentation(deck.presentation_id));
 			setChatMessage("");
 			setSelectedElement(null);
@@ -263,6 +282,7 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 		setConversationId(crypto.randomUUID());
 		setChatMessage("");
 		setSelectedElement(null);
+		setLastReply(null);
 	};
 
 	const exportDeck = async () => {
@@ -324,29 +344,56 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 	if (stage === "editor" && deck) {
 		return (
 			<section className="flex h-full min-h-0 flex-1 flex-col">
-				<header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
-					<div className="flex items-center gap-3">
+				<header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border px-5">
+					<div className="flex min-w-0 items-center gap-3">
 						<button
 							type="button"
 							onClick={reset}
-							className="rounded-md p-1.5 hover:bg-muted"
+							className="shrink-0 rounded-md p-1.5 hover:bg-muted"
 							aria-label="Back"
 						>
 							<ArrowLeft className="h-4 w-4" />
 						</button>
-						<div>
-							<h1 className="text-sm font-semibold">{deck.title || "Untitled presentation"}</h1>
+						<div className="min-w-0">
+							<h1 className="truncate text-sm font-semibold">
+								{deck.title || "Untitled presentation"}
+							</h1>
 							<p className="text-[11px] text-muted-foreground">{deck.slides.length} slides</p>
 						</div>
 					</div>
-					<button
-						type="button"
-						onClick={exportDeck}
-						className="flex items-center gap-2 rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background"
-					>
-						<Download className="h-3.5 w-3.5" />
-						Export .pptx
-					</button>
+					<div className="flex shrink-0 items-center gap-2.5">
+						<div className="flex h-[38px] items-center gap-2 rounded-full border border-border bg-muted/40 px-3.5">
+							<button
+								type="button"
+								disabled={!historyAvailability.canUndo}
+								onClick={() => setHistoryCommand({ action: "undo", token: Date.now() })}
+								className="text-muted-foreground transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+								aria-label="Undo"
+								title="Undo"
+							>
+								<Undo2 className="h-3.5 w-3.5" />
+							</button>
+							<span className="h-4 w-px bg-border" />
+							<button
+								type="button"
+								disabled={!historyAvailability.canRedo}
+								onClick={() => setHistoryCommand({ action: "redo", token: Date.now() })}
+								className="text-muted-foreground transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
+								aria-label="Redo"
+								title="Redo"
+							>
+								<Redo2 className="h-3.5 w-3.5" />
+							</button>
+						</div>
+						<button
+							type="button"
+							onClick={exportDeck}
+							className="flex items-center gap-1.5 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+						>
+							Export
+							<ArrowUpRight className="h-3.5 w-3.5" />
+						</button>
+					</div>
 				</header>
 				{exportPath && (
 					<div className="flex items-center gap-2 border-b border-border bg-emerald-500/10 px-5 py-2 text-xs text-emerald-700">
@@ -411,6 +458,8 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 									presentationId={deck.presentation_id}
 									slideIndex={selectedSlide}
 									isSelected
+									historyCommand={historyCommand}
+									onHistoryAvailabilityChange={setHistoryAvailability}
 									onLayoutChange={(layout) => {
 										setDeck((current) =>
 											current
@@ -445,12 +494,30 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 								New chat
 							</button>
 						</div>
-						<div className="flex min-h-0 flex-1 items-center justify-center px-6">
-							<h3 className="-translate-y-2 text-center text-[22px] font-normal leading-[1.12] tracking-[-0.02em] text-muted-foreground">
-								What can I do
-								<br />
-								for your deck today?
-							</h3>
+						<div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-6">
+							{chatBusy ? (
+								<div className="flex items-center gap-2 text-sm text-muted-foreground">
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+									Thinking…
+								</div>
+							) : lastReply ? (
+								<div className="w-full">
+									{!lastReply.editsMade && (
+										<p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-amber-600">
+											No changes were made
+										</p>
+									)}
+									<p className="whitespace-pre-wrap text-sm text-foreground">
+										{lastReply.text || "(empty response)"}
+									</p>
+								</div>
+							) : (
+								<h3 className="-translate-y-2 text-center text-[22px] font-normal leading-[1.12] tracking-[-0.02em] text-muted-foreground">
+									What can I do
+									<br />
+									for your deck today?
+								</h3>
+							)}
 						</div>
 						<div className="flex shrink-0 flex-col gap-2.5 px-3 pb-3.5">
 							<div
