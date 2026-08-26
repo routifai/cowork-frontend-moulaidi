@@ -91,6 +91,30 @@ execSync("node vendor/sync-presentation-export.mjs", {
 	stdio: "inherit",
 });
 
+// Copy the vendored presentation-export runtime (@presenton/export-core +
+// its own node_modules, plus the pinned Chromium build) into src-tauri/ so
+// Tauri's `bundle.resources` ("presenting-runtime/**/*" in tauri.conf.json)
+// actually ships it — pptx export otherwise has nothing to find at runtime
+// in a packaged build (this resource glob previously matched zero files).
+// The sidecar is pointed at this bundled copy via the EXPORT_RUNTIME_DIR
+// env var lib.rs sets when spawning the production sidecar.
+console.log("[prebuild] Copying presentation-export runtime into src-tauri/presenting-runtime...");
+{
+	const sourceDir = join(backendDir, "presenting", "engine", "vendor", "presentation-export");
+	const targetDir = join(root, "src-tauri", "presenting-runtime");
+	rmSync(targetDir, { recursive: true, force: true });
+	mkdirSync(targetDir, { recursive: true });
+	for (const entry of ["node_modules", "chromium-cache", "package.json"]) {
+		const from = join(sourceDir, entry);
+		if (!existsSync(from)) {
+			console.warn(`[prebuild]   skip ${entry} — not present in vendored runtime (did the sync step above fail?)`);
+			continue;
+		}
+		cpSync(from, join(targetDir, entry), { recursive: true });
+		console.log(`[prebuild]   copied ${entry}`);
+	}
+}
+
 console.log("[prebuild] Syncing preset template thumbnails...");
 execSync("node scripts/sync-presenting-template-thumbnails.mjs", {
 	cwd: root,

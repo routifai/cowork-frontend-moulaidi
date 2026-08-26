@@ -451,6 +451,25 @@ async fn spawn_sidecar(
         };
         c.env("SIDECAR_LOG_LEVEL", default_level);
     }
+    // Point pptx export at the bundled presentation-export runtime
+    // (@presenton/export-core + its pinned Chromium — see prebuild.mjs,
+    // which copies presenting/engine/vendor/presentation-export into
+    // src-tauri/presenting-runtime/, a declared `bundle.resources` entry).
+    // Dev mode doesn't need this: hypatia-backend/src/presenting/paths.ts
+    // finds the vendored runtime itself relative to the live checkout.
+    if !is_dev {
+        if let Ok(resource_dir) = app.path().resource_dir() {
+            let export_runtime_dir = strip_unc_prefix(resource_dir.join("presenting-runtime"));
+            if export_runtime_dir.exists() {
+                c.env("EXPORT_RUNTIME_DIR", &export_runtime_dir);
+            } else {
+                log::warn!(
+                    "presenting-runtime resource not found at {:?} — pptx export will fail",
+                    export_runtime_dir
+                );
+            }
+        }
+    }
     // macOS GUI apps launched via Finder don't inherit a terminal's env
     // vars, and our bundled Node 24's stock CA bundle doesn't include
     // corporate MITM root certs (ZScaler / Cloudflare WARP / Fortinet /
