@@ -183,6 +183,19 @@ export async function listSmartExamples(): Promise<SmartExampleSummary[]> {
 	return result.examples;
 }
 
+/** Direct manual text edit → whole-slide HTML save, no LLM call. Used by SmartSlideRenderer's contenteditable text leaves on blur. */
+export async function saveSlideHtml(
+	presentationId: string,
+	index: number,
+	html: string,
+): Promise<{ saved: boolean; message?: string }> {
+	return invoke<{ saved: boolean; message?: string }>("presenting_save_slide_html", {
+		presentationId,
+		index,
+		html,
+	});
+}
+
 // ---------------------------------------------------------------------------
 // Deck retrieval
 // ---------------------------------------------------------------------------

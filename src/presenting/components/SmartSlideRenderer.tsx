@@ -12,14 +12,17 @@
  * requires internet access, matching Presenton's own Smart mode. No local
  * offline bundle is vendored yet.
  *
- * Hover-to-preview / click-to-select: Smart slides have no drag/resize
- * editing (there's no structural element tree to move — see chat/tools.ts,
- * saveSlide only replaces whole-slide HTML for Smart mode), but scoping the
- * next chat message to an element is still useful, same as Presenton's own
- * Smart editor (hovering shows a dashed purple outline as a preview; only a
- * click actually commits the selection, shown as a solid outline). The
- * iframe has an opaque origin (srcDoc), so the injected script talks to the
- * host page via postMessage rather than direct DOM access; only the
+ * Direct text editing + hover-to-preview / click-to-select: mirrors
+ * Presenton's own SmartHtmlEditor.tsx approach (marks every text leaf
+ * `contenteditable`, saves the whole slide's HTML on blur) rather than a
+ * structural element tree (there is none for Smart mode — saveSlide only
+ * ever replaces the whole slide's HTML). Presenton runs this directly in
+ * its own app DOM; this renders inside a sandboxed iframe instead (arbitrary
+ * LLM-written HTML/JS shouldn't share an origin with the host app), so the
+ * injected script talks back via postMessage. Hovering shows a dashed
+ * purple outline as a preview; clicking a non-text element commits it as
+ * the chat-scoping selection (solid outline); clicking into text just
+ * places a cursor to edit, same as any other contenteditable. Only the
  * interactive instance (the main editor view, not sidebar thumbnails) gets
  * this script injected at all.
  */
@@ -31,14 +34,17 @@ const CHART_JS_DATALABELS_CDN_SRC =
 	"https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2/dist/chartjs-plugin-datalabels.min.js";
 
 const SELECT_MESSAGE_TYPE = "hypatia-smart-slide-select";
+const SAVE_MESSAGE_TYPE = "hypatia-smart-slide-save";
 const HOVER_OUTLINE = "2px dashed #7c5cff";
 const SELECTED_OUTLINE = "2px solid #7c5cff";
 
-const HOVER_AND_CLICK_TO_SELECT_SCRIPT = `
+const INTERACTIVE_SCRIPT = `
 <script>
 (function () {
   var hovered = null;
   var selected = null;
+  var dirty = false;
+
   function isMeaningful(el) {
     if (!el || el === document.body) return false;
     if (el.getAttribute && (el.getAttribute('aria-hidden') === 'true' || el.getAttribute('data-decorative') === 'true')) return false;
@@ -75,6 +81,52 @@ const HOVER_AND_CLICK_TO_SELECT_SCRIPT = `
     if (hovered && hovered !== selected) applyOutline(hovered, '${HOVER_OUTLINE}');
     if (selected) applyOutline(selected, '${SELECTED_OUTLINE}');
   }
+
+  // --- direct text editing: mark every text leaf contenteditable, same
+  // idea as Presenton's SmartHtmlEditor (a "leaf" here is any element with
+  // no element children but real text — inline formatting like <b>/<span>
+  // doesn't disqualify a parent from being a leaf's editable host). ---
+  var EXCLUDED = { SCRIPT: 1, STYLE: 1, CANVAS: 1, IMG: 1, SVG: 1, VIDEO: 1 };
+  function markEditableLeaves() {
+    var all = document.body.querySelectorAll('*');
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      if (EXCLUDED[el.tagName]) continue;
+      if (el.children.length > 0) continue;
+      if (!(el.textContent || '').trim()) continue;
+      el.setAttribute('contenteditable', 'true');
+      el.setAttribute('spellcheck', 'false');
+      el.setAttribute('data-hypatia-editable', '1');
+    }
+  }
+  markEditableLeaves();
+
+  function isEditable(el) {
+    return !!(el && el.getAttribute && el.getAttribute('data-hypatia-editable'));
+  }
+
+  function saveSlideHtml() {
+    var section = document.querySelector('section');
+    if (!section) return;
+    var clone = section.cloneNode(true);
+    var editable = clone.querySelectorAll('[data-hypatia-editable]');
+    for (var i = 0; i < editable.length; i++) {
+      editable[i].removeAttribute('contenteditable');
+      editable[i].removeAttribute('spellcheck');
+      editable[i].removeAttribute('data-hypatia-editable');
+    }
+    window.parent.postMessage({ type: '${SAVE_MESSAGE_TYPE}', html: clone.outerHTML }, '*');
+  }
+
+  document.addEventListener('input', function (e) {
+    if (isEditable(e.target)) dirty = true;
+  }, true);
+  document.addEventListener('blur', function (e) {
+    if (!isEditable(e.target) || !dirty) return;
+    dirty = false;
+    saveSlideHtml();
+  }, true);
+
   document.addEventListener('mouseover', function (e) {
     var target = findTarget(e.target);
     if (target === hovered) return;
@@ -89,7 +141,8 @@ const HOVER_AND_CLICK_TO_SELECT_SCRIPT = `
     hovered = null;
   }, true);
   document.addEventListener('click', function (e) {
-    e.preventDefault();
+    // Text leaves: let the browser place a cursor normally (no preventDefault).
+    if (!isEditable(e.target)) e.preventDefault();
     var target = findTarget(e.target);
     if (selected) clearOutline(selected);
     selected = target;
@@ -105,20 +158,22 @@ const HOVER_AND_CLICK_TO_SELECT_SCRIPT = `
 
 interface SmartSlideRendererProps {
 	html: string;
-	/** Enables click-to-select. Only pass on the single interactive (main editor) instance — never on sidebar thumbnails. */
+	/** Enables direct text editing + hover-to-preview/click-to-select. Only pass on the single interactive (main editor) instance — never on sidebar thumbnails. */
 	interactive?: boolean;
 	onElementSelect?: (label: string | null) => void;
+	/** Called with the whole slide's updated HTML when a direct text edit loses focus. Required when `interactive` is true. */
+	onHtmlEdit?: (html: string) => void;
 }
 
-export function SmartSlideRenderer({ html, interactive = false, onElementSelect }: SmartSlideRendererProps) {
+export function SmartSlideRenderer({ html, interactive = false, onElementSelect, onHtmlEdit }: SmartSlideRendererProps) {
 	const srcDoc = useMemo(
 		() => `<!doctype html><html><head><meta charset="utf-8" />
 <script src="${TAILWIND_CDN_SRC}"></script>
 <script src="${CHART_JS_CDN_SRC}"></script>
 <script src="${CHART_JS_DATALABELS_CDN_SRC}"></script>
 <script>if (window.Chart && window.ChartDataLabels) { Chart.register(ChartDataLabels); }</script>
-<style>* { box-sizing: border-box; } html, body { margin: 0; padding: 0; width: 1280px; height: 720px; overflow: hidden; }</style>
-</head><body>${html}${interactive ? HOVER_AND_CLICK_TO_SELECT_SCRIPT : ""}</body></html>`,
+<style>* { box-sizing: border-box; } html, body { margin: 0; padding: 0; width: 1280px; height: 720px; overflow: hidden; } [contenteditable="true"] { cursor: text; }</style>
+</head><body>${html}${interactive ? INTERACTIVE_SCRIPT : ""}</body></html>`,
 		[html, interactive],
 	);
 
@@ -126,10 +181,11 @@ export function SmartSlideRenderer({ html, interactive = false, onElementSelect 
 		if (!interactive) return;
 		const handler = (event: MessageEvent) => {
 			if (event.data?.type === SELECT_MESSAGE_TYPE) onElementSelect?.(event.data.label ?? null);
+			if (event.data?.type === SAVE_MESSAGE_TYPE) onHtmlEdit?.(event.data.html ?? "");
 		};
 		window.addEventListener("message", handler);
 		return () => window.removeEventListener("message", handler);
-	}, [interactive, onElementSelect]);
+	}, [interactive, onElementSelect, onHtmlEdit]);
 
 	return (
 		<iframe

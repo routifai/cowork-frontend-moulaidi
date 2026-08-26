@@ -22,6 +22,7 @@ import {
 	listSmartExamples,
 	parseDocument,
 	restoreSlide,
+	saveSlideHtml,
 	startGeneration,
 } from "./api/presentingApi";
 import { ScaledSlideStage } from "./components/ScaledSlideStage";
@@ -263,6 +264,27 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 		}
 	};
 
+	const handleHtmlEdit = async (index: number, html: string) => {
+		if (!deck) return;
+		try {
+			const result = await saveSlideHtml(deck.presentation_id, index, html);
+			if (!result.saved) {
+				setError(result.message ?? "Could not save that edit.");
+				return;
+			}
+			setDeck((current) =>
+				current
+					? {
+							...current,
+							slides: current.slides.map((slide, i) => (i === index ? { ...slide, html_content: html } : slide)),
+						}
+					: current,
+			);
+		} catch (cause) {
+			setError(`Could not save that edit: ${errorMessage(cause)}`);
+		}
+	};
+
 	const chooseEditPreviewVersion = async (version: "original" | "modified") => {
 		if (!deck || !editPreview || previewBusy) return;
 		setEditPreview({ ...editPreview, selected: version });
@@ -437,6 +459,7 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 									onElementSelect={(label) =>
 										setSelectedElement(label ? { slideIndex: selectedSlide, label } : null)
 									}
+									onHtmlEdit={(html) => handleHtmlEdit(selectedSlide, html)}
 								/>
 							</ScaledSlideStage>
 						) : selected ? (
