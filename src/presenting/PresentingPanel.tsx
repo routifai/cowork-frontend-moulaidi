@@ -415,22 +415,22 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 					</div>
 				)}
 				<div className="flex min-h-0 flex-1">
-					<aside className="w-[150px] shrink-0 overflow-y-auto bg-muted/20 px-4 py-5">
+					<aside className="w-[120px] shrink-0 overflow-y-auto bg-muted/20 px-3 py-5">
 						<div className="space-y-[15px]">
 							{deck.slides.map((slide, index) => (
 								<button
 									key={slide.id || index}
 									type="button"
 									onClick={() => setSelectedSlide(index)}
-									className="flex h-[62px] w-full items-start justify-between gap-1.5 text-left"
+									className="flex h-[54px] w-full items-start justify-between gap-1 text-left"
 								>
 									<p
-										className={`shrink-0 text-[12px] leading-normal ${selectedSlide === index ? "font-semibold text-primary" : "font-normal text-muted-foreground"}`}
+										className={`shrink-0 text-[11px] leading-normal ${selectedSlide === index ? "font-semibold text-primary" : "font-normal text-muted-foreground"}`}
 									>
 										{index + 1}
 									</p>
 									<div
-										className={`relative h-[62px] w-[110px] shrink-0 overflow-hidden rounded bg-white transition-[border-color,box-shadow] duration-200 ${
+										className={`relative h-[54px] w-[96px] shrink-0 overflow-hidden rounded bg-white transition-[border-color,box-shadow] duration-200 ${
 											selectedSlide === index
 												? "border-2 border-primary shadow-[0_0_0_3px_hsl(var(--primary)/0.16)]"
 												: "border border-border"
@@ -450,7 +450,7 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 							))}
 						</div>
 					</aside>
-					<main className="flex min-w-0 flex-1 overflow-hidden bg-muted/30 p-5">
+					<main className="flex min-w-0 flex-1 overflow-hidden bg-muted/30 p-3">
 						{selected?.html_content ? (
 							<ScaledSlideStage stageClassName="rounded-lg bg-white text-slate-900 shadow-xl">
 								<SmartSlideRenderer
@@ -470,7 +470,7 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 							</div>
 						) : null}
 					</main>
-					<aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-background">
+					<aside className="flex w-[300px] shrink-0 flex-col border-l border-border bg-background">
 						<div className="flex h-12 shrink-0 items-center justify-end border-b border-border px-3">
 							<button
 								type="button"
