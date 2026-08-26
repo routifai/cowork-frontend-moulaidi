@@ -12,14 +12,16 @@
  * requires internet access, matching Presenton's own Smart mode. No local
  * offline bundle is vendored yet.
  *
- * Click-to-select: Smart slides have no drag/resize editing (there's no
- * structural element tree to move — see chat/tools.ts, saveSlide only
- * replaces whole-slide HTML for Smart mode), but selecting an element to
- * scope the next chat message to is still useful, same as TemplateV2's
- * click-to-select. The iframe has an opaque origin (srcDoc), so the injected
- * script talks to the host page via postMessage rather than direct DOM
- * access; only the interactive instance (the main editor view, not sidebar
- * thumbnails) gets the click-handling script injected at all.
+ * Hover-to-preview / click-to-select: Smart slides have no drag/resize
+ * editing (there's no structural element tree to move — see chat/tools.ts,
+ * saveSlide only replaces whole-slide HTML for Smart mode), but scoping the
+ * next chat message to an element is still useful, same as Presenton's own
+ * Smart editor (hovering shows a dashed purple outline as a preview; only a
+ * click actually commits the selection, shown as a solid outline). The
+ * iframe has an opaque origin (srcDoc), so the injected script talks to the
+ * host page via postMessage rather than direct DOM access; only the
+ * interactive instance (the main editor view, not sidebar thumbnails) gets
+ * this script injected at all.
  */
 import { useEffect, useMemo } from "react";
 
@@ -29,10 +31,13 @@ const CHART_JS_DATALABELS_CDN_SRC =
 	"https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2/dist/chartjs-plugin-datalabels.min.js";
 
 const SELECT_MESSAGE_TYPE = "hypatia-smart-slide-select";
+const HOVER_OUTLINE = "2px dashed #7c5cff";
+const SELECTED_OUTLINE = "2px solid #7c5cff";
 
-const CLICK_TO_SELECT_SCRIPT = `
+const HOVER_AND_CLICK_TO_SELECT_SCRIPT = `
 <script>
 (function () {
+  var hovered = null;
   var selected = null;
   function isMeaningful(el) {
     if (!el || el === document.body) return false;
@@ -57,24 +62,42 @@ const CLICK_TO_SELECT_SCRIPT = `
     }
     return null;
   }
-  function clearHighlight() {
-    if (selected) {
-      selected.style.outline = '';
-      selected.style.outlineOffset = '';
-    }
+  function applyOutline(el, value) {
+    el.style.outline = value;
+    el.style.outlineOffset = '2px';
+    el.style.borderRadius = el.style.borderRadius || '4px';
   }
+  function clearOutline(el) {
+    el.style.outline = '';
+    el.style.outlineOffset = '';
+  }
+  function repaint() {
+    if (hovered && hovered !== selected) applyOutline(hovered, '${HOVER_OUTLINE}');
+    if (selected) applyOutline(selected, '${SELECTED_OUTLINE}');
+  }
+  document.addEventListener('mouseover', function (e) {
+    var target = findTarget(e.target);
+    if (target === hovered) return;
+    if (hovered && hovered !== selected) clearOutline(hovered);
+    hovered = target;
+    repaint();
+  }, true);
+  document.addEventListener('mouseout', function (e) {
+    var target = findTarget(e.target);
+    if (target !== hovered) return;
+    if (hovered !== selected) clearOutline(hovered);
+    hovered = null;
+  }, true);
   document.addEventListener('click', function (e) {
     e.preventDefault();
     var target = findTarget(e.target);
-    clearHighlight();
+    if (selected) clearOutline(selected);
+    selected = target;
     if (!target) {
-      selected = null;
       window.parent.postMessage({ type: '${SELECT_MESSAGE_TYPE}', label: null }, '*');
       return;
     }
-    selected = target;
-    target.style.outline = '2px solid #7c5cff';
-    target.style.outlineOffset = '2px';
+    repaint();
     window.parent.postMessage({ type: '${SELECT_MESSAGE_TYPE}', label: describe(target) }, '*');
   }, true);
 })();
@@ -95,7 +118,7 @@ export function SmartSlideRenderer({ html, interactive = false, onElementSelect 
 <script src="${CHART_JS_DATALABELS_CDN_SRC}"></script>
 <script>if (window.Chart && window.ChartDataLabels) { Chart.register(ChartDataLabels); }</script>
 <style>* { box-sizing: border-box; } html, body { margin: 0; padding: 0; width: 1280px; height: 720px; overflow: hidden; }</style>
-</head><body>${html}${interactive ? CLICK_TO_SELECT_SCRIPT : ""}</body></html>`,
+</head><body>${html}${interactive ? HOVER_AND_CLICK_TO_SELECT_SCRIPT : ""}</body></html>`,
 		[html, interactive],
 	);
 

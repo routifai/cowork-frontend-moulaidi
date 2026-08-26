@@ -696,12 +696,7 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 											/>
 										</div>
 										<div className="flex items-center justify-between gap-2 px-3 py-2.5">
-											<div className="min-w-0">
-												<p className="truncate text-xs font-medium">{example.title}</p>
-												<p className="truncate text-[11px] text-muted-foreground">
-													by {example.author}
-												</p>
-											</div>
+											<p className="min-w-0 truncate text-xs font-medium">{example.title}</p>
 											<span
 												className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-medium ${selected ? "border-primary bg-primary text-primary-foreground" : "border-border"}`}
 											>

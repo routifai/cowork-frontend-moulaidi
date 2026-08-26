@@ -86,7 +86,6 @@ export interface StartGenerationParams {
 export interface SmartExampleSummary {
 	id: string;
 	title: string;
-	author: string;
 	slideCount: number;
 	/** Static PNG served from public/, e.g. "/smart-example-previews/<id>.png". */
 	previewUrl: string;
