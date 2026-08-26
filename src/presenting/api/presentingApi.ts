@@ -78,6 +78,18 @@ export interface StartGenerationParams {
 	document_text?: string;
 	/** Original filename (for the prompt label). */
 	document_name?: string;
+	/** A bundled community example's id (see listSmartExamples) — used as an optional style-only design reference. */
+	design_reference_id?: string;
+}
+
+/** A bundled community Smart deck usable as an optional design-reference style anchor. */
+export interface SmartExampleSummary {
+	id: string;
+	title: string;
+	author: string;
+	slideCount: number;
+	/** Static PNG served from public/, e.g. "/smart-example-previews/<id>.png". */
+	previewUrl: string;
 }
 
 export interface ChatEditParams {
@@ -162,7 +174,14 @@ export async function startGeneration(params: StartGenerationParams): Promise<Pr
 		webSearchProvider: params.web_search_provider,
 		documentText: params.document_text,
 		documentName: params.document_name,
+		designReferenceId: params.design_reference_id,
 	});
+}
+
+/** List bundled community Smart decks (real HTML slides) usable as an optional design-reference style anchor. */
+export async function listSmartExamples(): Promise<SmartExampleSummary[]> {
+	const result = await invoke<{ examples: SmartExampleSummary[] }>("presenting_list_smart_examples");
+	return result.examples;
 }
 
 // ---------------------------------------------------------------------------

@@ -908,6 +908,7 @@ async fn presenting_start_generation(
     document_name: Option<String>,
     web_search: Option<bool>,
     web_search_provider: Option<String>,
+    design_reference_id: Option<String>,
     s: State<'_, AppState>,
 ) -> Result<Value, String> {
     let id = format!("psg-{}", next_request_id());
@@ -934,8 +935,26 @@ async fn presenting_start_generation(
             "documentName":document_name,
             "webSearch":web_search.unwrap_or(false),
             "webSearchProvider":web_search_provider,
+            "designReferenceId":design_reference_id,
         }),
         std::time::Duration::from_secs(600),
+    )
+    .await
+}
+
+/// List bundled community Smart decks usable as an optional design-reference
+/// style anchor — real HTML slides, no LLM call, just a local manifest read.
+#[tauri::command]
+async fn presenting_list_smart_examples(s: State<'_, AppState>) -> Result<Value, String> {
+    let id = format!("plse-{}", next_request_id());
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_list_smart_examples",
+            "id":id,
+        }),
+        std::time::Duration::from_secs(30),
     )
     .await
 }
@@ -1830,6 +1849,7 @@ pub fn run() {
             presenting_export_presentation,
             presenting_get_presentation,
             presenting_restore_slide,
+            presenting_list_smart_examples,
             steer_prompt,
             follow_up_prompt,
             clear_queue,

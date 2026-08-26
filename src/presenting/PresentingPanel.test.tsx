@@ -17,6 +17,7 @@ vi.mock("./api/presentingApi", () => ({
 	getPresentation: vi.fn(),
 	exportPresentation: vi.fn(),
 	restoreSlide: vi.fn(),
+	listSmartExamples: vi.fn().mockResolvedValue([]),
 }));
 
 const deck = {

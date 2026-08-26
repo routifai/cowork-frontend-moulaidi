@@ -14,10 +14,12 @@ import { useEffect, useState } from "react";
 import {
 	type PresentingDeck,
 	type PresentingSlide,
+	type SmartExampleSummary,
 	chatEdit,
 	enginePing,
 	exportPresentation,
 	getPresentation,
+	listSmartExamples,
 	parseDocument,
 	restoreSlide,
 	startGeneration,
@@ -112,6 +114,8 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 		selected: "original" | "modified";
 	} | null>(null);
 	const [previewBusy, setPreviewBusy] = useState(false);
+	const [smartExamples, setSmartExamples] = useState<SmartExampleSummary[]>([]);
+	const [designReferenceId, setDesignReferenceId] = useState<string | null>(null);
 
 	useEffect(() => {
 		let active = true;
@@ -123,6 +127,13 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 				if (!active) return;
 				setError(`The presentation engine could not start: ${errorMessage(cause)}`);
 				setStage("error");
+			});
+		listSmartExamples()
+			.then((examples) => {
+				if (active) setSmartExamples(examples);
+			})
+			.catch(() => {
+				/* the design-reference picker is optional — a fetch failure just means an empty list */
 			});
 		return () => {
 			active = false;
@@ -147,6 +158,7 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 		setDocumentName(null);
 		setSelectedSlide(0);
 		setExportPath(null);
+		setDesignReferenceId(null);
 		setStage("start");
 	};
 
@@ -189,6 +201,7 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 				document_text: documentText ?? undefined,
 				document_name: documentName ?? undefined,
 				include_title_slide: true,
+				design_reference_id: designReferenceId ?? undefined,
 			});
 			setDeck(generated);
 			setSelectedSlide(0);
@@ -584,7 +597,7 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 
 	return (
 		<section className="flex h-full min-h-0 flex-1 flex-col overflow-auto px-6 py-7 md:px-10">
-			<div className="mx-auto w-full max-w-2xl">
+			<div className="mx-auto w-full max-w-4xl">
 				<header className="mb-8">
 					<div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
 						<Presentation className="h-4 w-4" /> PowerPoint Builder
@@ -595,6 +608,7 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 						Requires internet access.
 					</p>
 				</header>
+				<div className="mx-auto max-w-2xl">
 				<div className="rounded-xl border border-border bg-card p-5">
 					<label htmlFor="presenting-prompt" className="text-xs font-medium">
 						What should this presentation cover?
@@ -656,6 +670,50 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 						Choose file
 					</span>
 				</button>
+				</div>
+				{smartExamples.length > 0 && (
+					<div className="mt-10">
+						<h2 className="text-lg font-semibold">Community</h2>
+						<p className="mt-1 text-sm text-muted-foreground">
+							Choose an optional design reference for Smart mode.
+						</p>
+						<div className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+							{smartExamples.map((example) => {
+								const selected = designReferenceId === example.id;
+								return (
+									<button
+										key={example.id}
+										type="button"
+										onClick={() => setDesignReferenceId(selected ? null : example.id)}
+										className={`group overflow-hidden rounded-xl border bg-card text-left transition hover:-translate-y-0.5 hover:shadow-md ${selected ? "border-primary ring-2 ring-primary/30" : "border-border"}`}
+									>
+										<div className="aspect-video overflow-hidden bg-muted">
+											<img
+												src={example.previewUrl}
+												alt={`${example.title} preview`}
+												className="h-full w-full object-cover"
+												loading="lazy"
+											/>
+										</div>
+										<div className="flex items-center justify-between gap-2 px-3 py-2.5">
+											<div className="min-w-0">
+												<p className="truncate text-xs font-medium">{example.title}</p>
+												<p className="truncate text-[11px] text-muted-foreground">
+													by {example.author}
+												</p>
+											</div>
+											<span
+												className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-medium ${selected ? "border-primary bg-primary text-primary-foreground" : "border-border"}`}
+											>
+												{selected ? "Selected" : "Use"}
+											</span>
+										</div>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+				)}
 			</div>
 		</section>
 	);
