@@ -45,7 +45,7 @@ export interface PresentingDeck {
 	layout: Record<string, unknown> | null;
 	theme: Record<string, unknown> | null;
 	fonts: Record<string, unknown> | null;
-	generation_mode: "standard" | "smart";
+	generation_mode: "smart";
 	version: string;
 	slides: PresentingSlide[];
 }
@@ -61,6 +61,7 @@ export interface ParseDocumentResult {
 
 export interface StartGenerationParams {
 	content: string;
+	/** Always "smart" — Smart Generation is the only mode. */
 	template: string;
 	provider: string;
 	model: string;
@@ -73,7 +74,7 @@ export interface StartGenerationParams {
 	include_table_of_contents?: boolean;
 	web_search?: boolean;
 	web_search_provider?: string;
-	/** Uploaded Template path: extracted document text forwarded to the engine. */
+	/** Extracted source-document text, forwarded to the engine as generation content. */
 	document_text?: string;
 	/** Original filename (for the prompt label). */
 	document_name?: string;
@@ -87,7 +88,6 @@ export interface ChatEditParams {
 	provider: string;
 	model: string;
 	attachments?: Array<{ name?: string; filePath: string }>;
-	/** "standard" | "smart" — must match the presentation's stored generation_mode or the backend rejects the turn. */
 	presentation_type?: string;
 }
 
@@ -99,12 +99,6 @@ export interface ChatEditResult {
 	tool_calls: string[];
 }
 
-export interface EditSlideParams {
-	presentation_id: string;
-	tool: string;
-	args: Record<string, unknown>;
-}
-
 export interface ExportPresentationParams {
 	presentation_id: string;
 	output_path: string;
@@ -112,17 +106,6 @@ export interface ExportPresentationParams {
 
 export interface ExportPresentationResult {
 	output_path: string;
-}
-
-/** An Imported Template — a user-uploaded .pptx whose design was vision/LLM-extracted into a new, workspace-scoped template. Distinct from the 8 built-in Preset Templates and from "Uploaded Template" (a content document). */
-export interface ImportedTemplateSummary {
-	/** Wire id, always "imported:<uuid>" — pass directly as `template` to startGeneration. */
-	id: string;
-	name: string;
-	/** data:image/png;base64,... */
-	thumbnail: string;
-	slideCount: number;
-	createdAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +118,7 @@ export async function enginePing(): Promise<{ pong: boolean }> {
 }
 
 // ---------------------------------------------------------------------------
-// Document parsing (Uploaded Template entry path)
+// Document parsing (source-document content entry path)
 // ---------------------------------------------------------------------------
 
 /**
@@ -217,19 +200,6 @@ export async function chatEdit(params: ChatEditParams): Promise<ChatEditResult> 
 	});
 }
 
-// ---------------------------------------------------------------------------
-// Direct slide editing
-// ---------------------------------------------------------------------------
-
-/** Apply a single named editing tool (drag, resize, type, etc.) without an LLM call. */
-export async function editSlide(params: EditSlideParams): Promise<unknown> {
-	return invoke<unknown>("presenting_edit_slide", {
-		presentationId: params.presentation_id,
-		tool: params.tool,
-		args: params.args,
-	});
-}
-
 export interface SlideSnapshot {
 	htmlContent: string | null;
 	content: Record<string, unknown> | null;
@@ -263,46 +233,4 @@ export async function exportPresentation(
 		presentationId: params.presentation_id,
 		outputPath: params.output_path,
 	});
-}
-
-// ---------------------------------------------------------------------------
-// Imported Templates (design import — distinct from Uploaded Template's
-// content-fill path; see presenting/CONTEXT.md in hypatia-backend)
-// ---------------------------------------------------------------------------
-
-/**
- * Import a user-uploaded .pptx as a new Imported Template: the engine
- * vision/LLM-analyzes its design and produces a workspace-scoped template
- * usable exactly like a Preset Template (pass the returned `id` as
- * `template` to `startGeneration`). Blocking — runs one model call per
- * slide plus assembly; no intermediate progress streaming in v1.
- */
-export async function importTemplate(
-	pptxPath: string,
-	name: string | undefined,
-	provider: string,
-	model: string,
-): Promise<ImportedTemplateSummary> {
-	return invoke<ImportedTemplateSummary>("presenting_import_template", {
-		pptxPath,
-		name,
-		provider,
-		model,
-	});
-}
-
-/** List every Imported Template saved for the current workspace. */
-export async function listImportedTemplates(): Promise<ImportedTemplateSummary[]> {
-	const result = await invoke<{ templates: ImportedTemplateSummary[] }>(
-		"presenting_list_imported_templates",
-	);
-	return result.templates;
-}
-
-/** Permanently delete an Imported Template. */
-export async function deleteImportedTemplate(templateId: string): Promise<boolean> {
-	const result = await invoke<{ deleted: boolean }>("presenting_delete_imported_template", {
-		templateId,
-	});
-	return result.deleted;
 }

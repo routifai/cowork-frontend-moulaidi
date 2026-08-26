@@ -1055,34 +1055,6 @@ async fn presenting_get_presentation(
     .await
 }
 
-/// Direct (non-LLM) call into one of the ~137 editing tools — the WYSIWYG
-/// editor's own micro-interactions (drag, resize, type). Distinct from
-/// `presenting_chat_edit`: no model call, no conversation history, just
-/// "run this tool with these arguments right now."
-#[tauri::command]
-async fn presenting_edit_slide(
-    presentation_id: String,
-    tool: String,
-    args: Value,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    let id = format!("pes-{}", next_request_id());
-    // Phase 7 migration: route through the Node sidecar (TypeScript handler).
-    write_line_request(
-        &s.sidecar.stdin,
-        &s.pending_requests,
-        &serde_json::json!({
-            "type":"presenting_edit_slide",
-            "id":id,
-            "presentationId":presentation_id,
-            "tool":tool,
-            "args":args,
-        }),
-        std::time::Duration::from_secs(60),
-    )
-    .await
-}
-
 /// Restores one slide to a client-captured snapshot — a direct DB write, no
 /// LLM involved. Powers the chat panel's post-edit "keep original / keep
 /// edit" comparison.
@@ -1103,74 +1075,6 @@ async fn presenting_restore_slide(
             "presentationId":presentation_id,
             "index":index,
             "snapshot":snapshot,
-        }),
-        std::time::Duration::from_secs(30),
-    )
-    .await
-}
-
-/// Import a user-uploaded .pptx as a new Imported Template: the engine
-/// vision/LLM-analyzes its design (one model call per slide) and produces a
-/// workspace-scoped template. Distinct from `presenting_parse_document`
-/// (Uploaded Template's content-extraction path) — this extracts *design*,
-/// not text, and the result becomes a new, reusable template rather than
-/// generation input. Plain request/response for v1, no intermediate
-/// progress streaming yet (same as `presenting_start_generation`).
-#[tauri::command]
-async fn presenting_import_template(
-    pptx_path: String,
-    name: Option<String>,
-    provider: String,
-    model: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    let id = format!("pit-{}", next_request_id());
-    write_line_request(
-        &s.sidecar.stdin,
-        &s.pending_requests,
-        &serde_json::json!({
-            "type":"presenting_import_template",
-            "id":id,
-            "pptxPath":pptx_path,
-            "name":name,
-            "provider":provider,
-            "model":model,
-        }),
-        std::time::Duration::from_secs(900),
-    )
-    .await
-}
-
-/// List every Imported Template saved for the current workspace.
-#[tauri::command]
-async fn presenting_list_imported_templates(s: State<'_, AppState>) -> Result<Value, String> {
-    let id = format!("plit-{}", next_request_id());
-    write_line_request(
-        &s.sidecar.stdin,
-        &s.pending_requests,
-        &serde_json::json!({
-            "type":"presenting_list_imported_templates",
-            "id":id,
-        }),
-        std::time::Duration::from_secs(30),
-    )
-    .await
-}
-
-/// Permanently delete an Imported Template.
-#[tauri::command]
-async fn presenting_delete_imported_template(
-    template_id: String,
-    s: State<'_, AppState>,
-) -> Result<Value, String> {
-    let id = format!("pdit-{}", next_request_id());
-    write_line_request(
-        &s.sidecar.stdin,
-        &s.pending_requests,
-        &serde_json::json!({
-            "type":"presenting_delete_imported_template",
-            "id":id,
-            "templateId":template_id,
         }),
         std::time::Duration::from_secs(30),
     )
@@ -1925,11 +1829,7 @@ pub fn run() {
             presenting_parse_document,
             presenting_export_presentation,
             presenting_get_presentation,
-            presenting_edit_slide,
             presenting_restore_slide,
-            presenting_import_template,
-            presenting_list_imported_templates,
-            presenting_delete_imported_template,
             steer_prompt,
             follow_up_prompt,
             clear_queue,

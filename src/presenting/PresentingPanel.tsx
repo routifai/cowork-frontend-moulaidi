@@ -8,9 +8,6 @@ import {
 	Loader2,
 	Plus,
 	Presentation,
-	Redo2,
-	Sparkles,
-	Undo2,
 	X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -25,15 +22,8 @@ import {
 	restoreSlide,
 	startGeneration,
 } from "./api/presentingApi";
-import { ImportedTemplates } from "./components/ImportedTemplates";
 import { ScaledSlideStage } from "./components/ScaledSlideStage";
 import { SmartSlideRenderer } from "./components/SmartSlideRenderer";
-import {
-	TEMPLATE_V2_SURFACE_SELECTED_EVENT,
-	type TemplateV2SurfaceSelectedDetail,
-} from "./editor/events/events";
-import { TemplateV2KonvaSlide } from "./editor/surface/TemplateV2KonvaSlide";
-import { PresentingProvider } from "./state/PresentingProvider";
 
 // Quick-prompt suggestions shown below the composer — matches presenton's
 // editorQuickPrompts (presentation/components/chat/chat-prompts.tsx).
@@ -45,48 +35,7 @@ const QUICK_PROMPTS = [
 	"Make the deck consistent",
 ];
 
-/** Human-readable label for a Konva surface selection, e.g. "Title text" or "Image card". */
-function selectionLabel(
-	selection: NonNullable<TemplateV2SurfaceSelectedDetail["selection"]>,
-): string {
-	if (selection.kind === "multi-component") {
-		return selection.targetLabel || selection.componentLabels?.join(", ") || "Multiple components";
-	}
-	return (
-		selection.targetLabel ||
-		selection.componentLabel ||
-		selection.elementName ||
-		selection.elementType ||
-		selection.componentId ||
-		"Selected element"
-	);
-}
-
-// These ids MUST match presenting/engine/templates/ directory names exactly
-// — they're sent verbatim as the `template` param to `presenting_start_generation`.
-// Picking an id not present there fails with TemplateNotFoundError.
-// Thumbnails come from each template's own static/thumbnail.png, synced into
-// public/presenting-templates/ by scripts/sync-presenting-template-thumbnails.mjs.
-const PRESET_TEMPLATES = [
-	{ id: "general", name: "General" },
-	{ id: "modern", name: "Modern" },
-	{ id: "standard", name: "Standard" },
-	{ id: "executive", name: "Executive" },
-	{ id: "editorial", name: "Editorial" },
-	{ id: "momentum", name: "Momentum" },
-	{ id: "dynamic", name: "Dynamic" },
-	{ id: "swift", name: "Swift" },
-] as const;
-
-type Stage =
-	| "boot"
-	| "entry"
-	| "configure"
-	| "parsing"
-	| "generating"
-	| "editor"
-	| "exporting"
-	| "error";
+type Stage = "boot" | "start" | "parsing" | "generating" | "editor" | "exporting" | "error";
 
 export interface PresentingPanelProps {
 	provider?: string;
@@ -112,21 +61,12 @@ function diffSlideIndices(before: PresentingSlide[], after: PresentingSlide[]): 
 	return changed;
 }
 
-function MiniSlidePreview({ slide, presentationId }: { slide: PresentingSlide; presentationId: string }) {
+function MiniSlidePreview({ slide }: { slide: PresentingSlide }) {
 	return (
 		<div className="aspect-video w-full overflow-hidden rounded border border-border bg-white">
 			<ScaledSlideStage>
 				{slide.html_content ? (
 					<SmartSlideRenderer html={slide.html_content} />
-				) : slide.ui ? (
-					<TemplateV2KonvaSlide
-						layout={slide.ui as never}
-						isEditMode={false}
-						slideId={slide.id}
-						presentationId={presentationId}
-						slideIndex={slide.index}
-						isSelected={false}
-					/>
 				) : (
 					<div className="h-full w-full overflow-hidden p-2 text-[6px] leading-tight text-slate-700">
 						{slideText(slide.content).slice(0, 180)}
@@ -148,10 +88,9 @@ function slideText(content: Record<string, unknown>): string {
 	return values.filter(Boolean).join("\n");
 }
 
-function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
+export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 	const [stage, setStage] = useState<Stage>("boot");
 	const [error, setError] = useState<string | null>(null);
-	const [template, setTemplate] = useState("general");
 	const [prompt, setPrompt] = useState("");
 	const [slideCount, setSlideCount] = useState(8);
 	const [documentText, setDocumentText] = useState<string | null>(null);
@@ -165,14 +104,6 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 		slideIndex: number;
 		label: string;
 	} | null>(null);
-	const [historyCommand, setHistoryCommand] = useState<{
-		action: "undo" | "redo";
-		token: number;
-	} | null>(null);
-	const [historyAvailability, setHistoryAvailability] = useState({
-		canUndo: false,
-		canRedo: false,
-	});
 	const [lastReply, setLastReply] = useState<{ text: string; editsMade: boolean } | null>(null);
 	const [editPreview, setEditPreview] = useState<{
 		changedIndices: number[];
@@ -186,7 +117,7 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 		let active = true;
 		enginePing()
 			.then(() => {
-				if (active) setStage("entry");
+				if (active) setStage("start");
 			})
 			.catch((cause) => {
 				if (!active) return;
@@ -202,33 +133,10 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 	const canGenerate = Boolean(prompt.trim() || documentText) && Boolean(provider && model);
 	const [conversationId, setConversationId] = useState(() => crypto.randomUUID());
 
-	// TemplateV2KonvaSlide dispatches this on every selection change inside
-	// the editor canvas (component/element click, or deselect on empty-canvas
-	// click) — reusing it to scope the next chat-edit request to whatever the
-	// user has selected, same as presenton's chatHtmlSelection/
-	// selectedTemplateV2Target flow (never wired into this panel before).
-	useEffect(() => {
-		const handler = (event: Event) => {
-			const detail = (event as CustomEvent<TemplateV2SurfaceSelectedDetail>).detail;
-			if (!detail?.selection) {
-				setSelectedElement(null);
-				return;
-			}
-			setSelectedElement({
-				slideIndex: detail.slideIndex ?? selectedSlide,
-				label: selectionLabel(detail.selection),
-			});
-		};
-		window.addEventListener(TEMPLATE_V2_SURFACE_SELECTED_EVENT, handler);
-		return () => window.removeEventListener(TEMPLATE_V2_SURFACE_SELECTED_EVENT, handler);
-	}, [selectedSlide]);
-
 	// A selection on one slide shouldn't silently scope an edit on another.
-	// Undo/redo availability is per-slide history too — avoid a stale-enabled
-	// button flash before TemplateV2KonvaSlide reports the new slide's state.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset on slide change
 	useEffect(() => {
 		setSelectedElement(null);
-		setHistoryAvailability({ canUndo: false, canRedo: false });
 	}, [selectedSlide]);
 
 	const reset = () => {
@@ -239,7 +147,7 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 		setDocumentName(null);
 		setSelectedSlide(0);
 		setExportPath(null);
-		setStage("entry");
+		setStage("start");
 	};
 
 	const chooseDocument = async () => {
@@ -256,7 +164,7 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 			setDocumentText(parsed.text);
 			setDocumentName(parsed.name);
 			setPrompt(`Create a presentation from ${parsed.name}`);
-			setStage("configure");
+			setStage("start");
 		} catch (cause) {
 			setError(`Could not parse that document: ${errorMessage(cause)}`);
 			setStage("error");
@@ -274,7 +182,7 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 			const generated = await startGeneration({
 				content:
 					prompt.trim() || `Create a presentation from ${documentName ?? "the uploaded document"}.`,
-				template,
+				template: "smart",
 				provider,
 				model,
 				n_slides: slideCount,
@@ -451,29 +359,6 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 						</div>
 					</div>
 					<div className="flex shrink-0 items-center gap-2.5">
-						<div className="flex h-[38px] items-center gap-2 rounded-full border border-border bg-muted/40 px-3.5">
-							<button
-								type="button"
-								disabled={!historyAvailability.canUndo}
-								onClick={() => setHistoryCommand({ action: "undo", token: Date.now() })}
-								className="text-muted-foreground transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-								aria-label="Undo"
-								title="Undo"
-							>
-								<Undo2 className="h-3.5 w-3.5" />
-							</button>
-							<span className="h-4 w-px bg-border" />
-							<button
-								type="button"
-								disabled={!historyAvailability.canRedo}
-								onClick={() => setHistoryCommand({ action: "redo", token: Date.now() })}
-								className="text-muted-foreground transition-colors hover:text-primary disabled:cursor-not-allowed disabled:opacity-40"
-								aria-label="Redo"
-								title="Redo"
-							>
-								<Redo2 className="h-3.5 w-3.5" />
-							</button>
-						</div>
 						<button
 							type="button"
 							onClick={exportDeck}
@@ -520,17 +405,6 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 											<ScaledSlideStage>
 												<SmartSlideRenderer html={slide.html_content} />
 											</ScaledSlideStage>
-										) : slide.ui ? (
-											<ScaledSlideStage>
-												<TemplateV2KonvaSlide
-													layout={slide.ui as never}
-													isEditMode={false}
-													slideId={slide.id}
-													presentationId={deck.presentation_id}
-													slideIndex={index}
-													isSelected={selectedSlide === index}
-												/>
-											</ScaledSlideStage>
 										) : (
 											<div className="h-full w-full overflow-hidden p-2 text-[6px] leading-tight text-slate-700">
 												{slideText(slide.content).slice(0, 180)}
@@ -545,36 +419,11 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 						{selected?.html_content ? (
 							<ScaledSlideStage stageClassName="rounded-lg bg-white text-slate-900 shadow-xl">
 								<SmartSlideRenderer
-								html={selected.html_content}
-								interactive
-								onElementSelect={(label) =>
-									setSelectedElement(label ? { slideIndex: selectedSlide, label } : null)
-								}
-							/>
-							</ScaledSlideStage>
-						) : selected?.ui ? (
-							<ScaledSlideStage stageClassName="rounded-lg bg-white text-slate-900 shadow-xl">
-								<TemplateV2KonvaSlide
-									layout={selected.ui as never}
-									isEditMode
-									slideId={selected.id}
-									presentationId={deck.presentation_id}
-									slideIndex={selectedSlide}
-									isSelected
-									historyCommand={historyCommand}
-									onHistoryAvailabilityChange={setHistoryAvailability}
-									onLayoutChange={(layout) => {
-										setDeck((current) =>
-											current
-												? {
-														...current,
-														slides: current.slides.map((slide, index) =>
-															index === selectedSlide ? { ...slide, ui: layout as never } : slide,
-														),
-													}
-												: current,
-										);
-									}}
+									html={selected.html_content}
+									interactive
+									onElementSelect={(label) =>
+										setSelectedElement(label ? { slideIndex: selectedSlide, label } : null)
+									}
 								/>
 							</ScaledSlideStage>
 						) : selected ? (
@@ -648,11 +497,7 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 														</span>
 														<span className="flex flex-col gap-1">
 															{editPreview.changedIndices.slice(0, 2).map((index) => (
-																<MiniSlidePreview
-																	key={index}
-																	slide={card.slides[index]}
-																	presentationId={deck.presentation_id}
-																/>
+																<MiniSlidePreview key={index} slide={card.slides[index]} />
 															))}
 														</span>
 													</button>
@@ -739,71 +584,55 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 
 	return (
 		<section className="flex h-full min-h-0 flex-1 flex-col overflow-auto px-6 py-7 md:px-10">
-			<div className="mx-auto w-full max-w-5xl">
+			<div className="mx-auto w-full max-w-2xl">
 				<header className="mb-8">
 					<div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
 						<Presentation className="h-4 w-4" /> PowerPoint Builder
 					</div>
 					<h1 className="text-3xl font-semibold tracking-tight">Build a presentation</h1>
 					<p className="mt-2 text-sm text-muted-foreground">
-						Start from a visual preset or upload a document that should shape the deck.
+						Describe what you want — the AI designs each slide's HTML, layout, and charts freely.
+						Requires internet access.
 					</p>
 				</header>
-				<button
-					type="button"
-					onClick={() => {
-						setTemplate("smart");
-						setStage("configure");
-					}}
-					className={`group mb-6 flex w-full items-center gap-4 overflow-hidden rounded-xl border bg-card p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${template === "smart" ? "border-primary" : "border-border"}`}
-				>
-					<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-						<Sparkles className="h-6 w-6 text-primary" />
-					</div>
-					<div className="min-w-0">
-						<div className="text-sm font-semibold">Smart Generation</div>
-						<p className="mt-0.5 text-xs text-muted-foreground">
-							The AI designs each slide's HTML and layout freely — real Chart.js charts, no fixed
-							template. Requires internet access.
-						</p>
-					</div>
-				</button>
-				<div className="mb-4 flex items-center gap-2">
-					<Sparkles className="h-4 w-4 text-muted-foreground" />
-					<h2 className="text-sm font-medium">Choose a preset template</h2>
-				</div>
-				<div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-					{PRESET_TEMPLATES.map((item) => (
+				<div className="rounded-xl border border-border bg-card p-5">
+					<label htmlFor="presenting-prompt" className="text-xs font-medium">
+						What should this presentation cover?
+					</label>
+					<textarea
+						id="presenting-prompt"
+						value={prompt}
+						onChange={(event) => setPrompt(event.target.value)}
+						className="mt-2 h-28 w-full resize-none rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-primary"
+						placeholder="Describe the audience, goal, and key points…"
+					/>
+					<div className="mt-3 flex items-end justify-between gap-4">
+						<label className="text-xs font-medium">
+							Slides
+							<input
+								type="number"
+								min={1}
+								max={20}
+								value={slideCount}
+								onChange={(event) =>
+									setSlideCount(Math.max(1, Math.min(20, Number(event.target.value))))
+								}
+								className="ml-2 w-16 rounded-md border border-border bg-background px-2 py-1"
+							/>
+						</label>
 						<button
-							key={item.id}
 							type="button"
-							onClick={() => {
-								setTemplate(item.id);
-								setStage("configure");
-							}}
-							className={`group overflow-hidden rounded-xl border bg-card text-left transition hover:-translate-y-0.5 hover:shadow-md ${template === item.id ? "border-primary" : "border-border"}`}
+							disabled={!canGenerate}
+							onClick={generate}
+							className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background disabled:opacity-40"
 						>
-							<div className="aspect-video bg-muted overflow-hidden">
-								<img
-									src={`/presenting-templates/${item.id}.png`}
-									alt={`${item.name} template preview`}
-									className="h-full w-full object-cover"
-									loading="lazy"
-								/>
-							</div>
-							<div className="px-3 py-2.5 text-xs font-medium">{item.name}</div>
+							Generate presentation
 						</button>
-					))}
+					</div>
+					{!provider || !model ? (
+						<p className="mt-3 text-xs text-amber-600">Select a Cowork model before generating.</p>
+					) : null}
 				</div>
-				<ImportedTemplates
-					provider={provider}
-					model={model}
-					selectedTemplateId={template}
-					onSelect={(templateId) => {
-						setTemplate(templateId);
-						setStage("configure");
-					}}
-				/>
 				<div className="my-6 flex items-center gap-3 text-[11px] uppercase tracking-widest text-muted-foreground">
 					<span className="h-px flex-1 bg-border" />
 					or
@@ -819,7 +648,7 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 							<FileUp className="h-5 w-5" />
 						</span>
 						<span>
-							<span className="block text-sm font-medium">Upload a document template</span>
+							<span className="block text-sm font-medium">Upload a source document</span>
 							<span className="text-xs text-muted-foreground">PDF, PowerPoint, Word, or text</span>
 						</span>
 					</div>
@@ -827,57 +656,7 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 						Choose file
 					</span>
 				</button>
-				{stage === "configure" && (
-					<div className="mt-6 rounded-xl border border-border bg-card p-5">
-						<label htmlFor="presenting-prompt" className="text-xs font-medium">
-							What should this presentation cover?
-						</label>
-						<textarea
-							id="presenting-prompt"
-							value={prompt}
-							onChange={(event) => setPrompt(event.target.value)}
-							className="mt-2 h-28 w-full resize-none rounded-lg border border-border bg-background p-3 text-sm outline-none focus:border-primary"
-							placeholder="Describe the audience, goal, and key points…"
-						/>
-						<div className="mt-3 flex items-end justify-between gap-4">
-							<label className="text-xs font-medium">
-								Slides
-								<input
-									type="number"
-									min={1}
-									max={50}
-									value={slideCount}
-									onChange={(event) =>
-										setSlideCount(Math.max(1, Math.min(50, Number(event.target.value))))
-									}
-									className="ml-2 w-16 rounded-md border border-border bg-background px-2 py-1"
-								/>
-							</label>
-							<button
-								type="button"
-								disabled={!canGenerate}
-								onClick={generate}
-								className="rounded-lg bg-foreground px-4 py-2 text-sm font-medium text-background disabled:opacity-40"
-							>
-								Generate presentation
-							</button>
-						</div>
-						{!provider || !model ? (
-							<p className="mt-3 text-xs text-amber-600">
-								Select a Cowork model before generating.
-							</p>
-						) : null}
-					</div>
-				)}
 			</div>
 		</section>
-	);
-}
-
-export function PresentingPanel(props: PresentingPanelProps) {
-	return (
-		<PresentingProvider>
-			<PresentingPanelContent {...props} />
-		</PresentingProvider>
 	);
 }
