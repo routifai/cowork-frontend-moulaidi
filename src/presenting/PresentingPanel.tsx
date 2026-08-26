@@ -16,15 +16,18 @@ import {
 import { useEffect, useState } from "react";
 import {
 	type PresentingDeck,
+	type PresentingSlide,
 	chatEdit,
 	enginePing,
 	exportPresentation,
 	getPresentation,
 	parseDocument,
+	restoreSlide,
 	startGeneration,
 } from "./api/presentingApi";
 import { ImportedTemplates } from "./components/ImportedTemplates";
 import { ScaledSlideStage } from "./components/ScaledSlideStage";
+import { SmartSlideRenderer } from "./components/SmartSlideRenderer";
 import {
 	TEMPLATE_V2_SURFACE_SELECTED_EVENT,
 	type TemplateV2SurfaceSelectedDetail,
@@ -94,6 +97,46 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+function slideFingerprint(slide: PresentingSlide | undefined): string {
+	if (!slide) return "";
+	return `${slide.html_content ?? ""} ${JSON.stringify(slide.content ?? null)} ${JSON.stringify(slide.ui ?? null)}`;
+}
+
+/** Which slide indices actually changed between two decks of the same slide count — same-count edits only (v1 scope, mirrors presenton's own per-tool-call slide tracking but computed as a before/after diff instead of live tool tracing, since chatEdit here is a single blocking call). */
+function diffSlideIndices(before: PresentingSlide[], after: PresentingSlide[]): number[] {
+	const changed: number[] = [];
+	const count = Math.min(before.length, after.length);
+	for (let i = 0; i < count; i++) {
+		if (slideFingerprint(before[i]) !== slideFingerprint(after[i])) changed.push(i);
+	}
+	return changed;
+}
+
+function MiniSlidePreview({ slide, presentationId }: { slide: PresentingSlide; presentationId: string }) {
+	return (
+		<div className="aspect-video w-full overflow-hidden rounded border border-border bg-white">
+			<ScaledSlideStage>
+				{slide.html_content ? (
+					<SmartSlideRenderer html={slide.html_content} />
+				) : slide.ui ? (
+					<TemplateV2KonvaSlide
+						layout={slide.ui as never}
+						isEditMode={false}
+						slideId={slide.id}
+						presentationId={presentationId}
+						slideIndex={slide.index}
+						isSelected={false}
+					/>
+				) : (
+					<div className="h-full w-full overflow-hidden p-2 text-[6px] leading-tight text-slate-700">
+						{slideText(slide.content).slice(0, 180)}
+					</div>
+				)}
+			</ScaledSlideStage>
+		</div>
+	);
+}
+
 function slideText(content: Record<string, unknown>): string {
 	const values: string[] = [];
 	const visit = (value: unknown) => {
@@ -131,6 +174,13 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 		canRedo: false,
 	});
 	const [lastReply, setLastReply] = useState<{ text: string; editsMade: boolean } | null>(null);
+	const [editPreview, setEditPreview] = useState<{
+		changedIndices: number[];
+		before: PresentingSlide[];
+		after: PresentingSlide[];
+		selected: "original" | "modified";
+	} | null>(null);
+	const [previewBusy, setPreviewBusy] = useState(false);
 
 	useEffect(() => {
 		let active = true;
@@ -255,6 +305,7 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 			);
 		}
 		const composedMessage = [...contextLines, `User message: ${chatMessage.trim()}`].join("\n");
+		const beforeSlides = deck.slides;
 		try {
 			const result = await chatEdit({
 				presentation_id: deck.presentation_id,
@@ -262,13 +313,26 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 				message: composedMessage,
 				provider,
 				model,
+				presentation_type: deck.generation_mode,
 			});
 			// The model can reply with only text and zero tool calls — e.g.
 			// explaining why it didn't make a change. Previously this result was
 			// discarded entirely: the deck would silently reload unchanged and
 			// the textbox would clear, with no way to tell "no-op" from "broken."
 			setLastReply({ text: result.response, editsMade: result.tool_calls.length > 0 });
-			setDeck(await getPresentation(deck.presentation_id));
+			const refreshed = await getPresentation(deck.presentation_id);
+			setDeck(refreshed);
+			// Snapshot-diff before/after to power the "keep original / keep edit"
+			// comparison — chatEdit here is one blocking call (no per-tool-call
+			// streaming to hook into like presenton's own live tool tracing), so
+			// this reconstructs the same before/after picture from a single diff
+			// once the whole turn is done, rather than progressively.
+			const changedIndices = diffSlideIndices(beforeSlides, refreshed.slides);
+			setEditPreview(
+				changedIndices.length
+					? { changedIndices, before: beforeSlides, after: refreshed.slides, selected: "modified" }
+					: null,
+			);
 			setChatMessage("");
 			setSelectedElement(null);
 		} catch (cause) {
@@ -278,11 +342,36 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 		}
 	};
 
+	const chooseEditPreviewVersion = async (version: "original" | "modified") => {
+		if (!deck || !editPreview || previewBusy) return;
+		setEditPreview({ ...editPreview, selected: version });
+		if (version === "modified") return; // already the live deck state
+		setPreviewBusy(true);
+		try {
+			for (const index of editPreview.changedIndices) {
+				const original = editPreview.before[index];
+				if (!original) continue;
+				await restoreSlide(deck.presentation_id, index, {
+					htmlContent: original.html_content,
+					content: original.content,
+					ui: original.ui,
+					speakerNote: original.speaker_note,
+				});
+			}
+			setDeck(await getPresentation(deck.presentation_id));
+		} catch (cause) {
+			setError(`Could not restore the original slide(s): ${errorMessage(cause)}`);
+		} finally {
+			setPreviewBusy(false);
+		}
+	};
+
 	const startNewChat = () => {
 		setConversationId(crypto.randomUUID());
 		setChatMessage("");
 		setSelectedElement(null);
 		setLastReply(null);
+		setEditPreview(null);
 	};
 
 	const exportDeck = async () => {
@@ -427,7 +516,11 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 												: "border border-border"
 										}`}
 									>
-										{slide.ui ? (
+										{slide.html_content ? (
+											<ScaledSlideStage>
+												<SmartSlideRenderer html={slide.html_content} />
+											</ScaledSlideStage>
+										) : slide.ui ? (
 											<ScaledSlideStage>
 												<TemplateV2KonvaSlide
 													layout={slide.ui as never}
@@ -449,7 +542,17 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 						</div>
 					</aside>
 					<main className="flex min-w-0 flex-1 overflow-hidden bg-muted/30 p-5">
-						{selected?.ui ? (
+						{selected?.html_content ? (
+							<ScaledSlideStage stageClassName="rounded-lg bg-white text-slate-900 shadow-xl">
+								<SmartSlideRenderer
+								html={selected.html_content}
+								interactive
+								onElementSelect={(label) =>
+									setSelectedElement(label ? { slideIndex: selectedSlide, label } : null)
+								}
+							/>
+							</ScaledSlideStage>
+						) : selected?.ui ? (
 							<ScaledSlideStage stageClassName="rounded-lg bg-white text-slate-900 shadow-xl">
 								<TemplateV2KonvaSlide
 									layout={selected.ui as never}
@@ -510,6 +613,53 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 									<p className="whitespace-pre-wrap text-sm text-foreground">
 										{lastReply.text || "(empty response)"}
 									</p>
+									{editPreview && deck && (
+										<div className="mt-4 flex flex-col gap-2">
+											<div className="flex items-center gap-1 text-[13px]">
+												<span className="font-semibold text-foreground">Select edits</span>
+												<span className="ml-auto text-[11px] font-medium text-primary">
+													{editPreview.changedIndices.length}{" "}
+													{editPreview.changedIndices.length === 1 ? "Change" : "Changes"}
+												</span>
+											</div>
+											<div className="grid grid-cols-2 gap-1.5">
+												{(
+													[
+														{ label: "Original", slides: editPreview.before, version: "original" as const },
+														{ label: "Modified", slides: editPreview.after, version: "modified" as const },
+													] as const
+												).map((card) => (
+													<button
+														key={card.label}
+														type="button"
+														disabled={previewBusy}
+														onClick={() => chooseEditPreviewVersion(card.version)}
+														className={`min-w-0 rounded-md border px-1.5 py-2 text-left transition-colors disabled:cursor-wait disabled:opacity-70 ${
+															editPreview.selected === card.version
+																? "border-primary bg-primary/5"
+																: "border-border hover:border-primary/40"
+														}`}
+													>
+														<span className="mb-1.5 flex items-center justify-center gap-1 text-center text-xs font-medium">
+															{previewBusy && editPreview.selected === card.version && (
+																<Loader2 className="h-3 w-3 animate-spin text-primary" />
+															)}
+															{card.label}
+														</span>
+														<span className="flex flex-col gap-1">
+															{editPreview.changedIndices.slice(0, 2).map((index) => (
+																<MiniSlidePreview
+																	key={index}
+																	slide={card.slides[index]}
+																	presentationId={deck.presentation_id}
+																/>
+															))}
+														</span>
+													</button>
+												))}
+											</div>
+										</div>
+									)}
 								</div>
 							) : (
 								<h3 className="-translate-y-2 text-center text-[22px] font-normal leading-[1.12] tracking-[-0.02em] text-muted-foreground">
@@ -599,6 +749,25 @@ function PresentingPanelContent({ provider, model }: PresentingPanelProps) {
 						Start from a visual preset or upload a document that should shape the deck.
 					</p>
 				</header>
+				<button
+					type="button"
+					onClick={() => {
+						setTemplate("smart");
+						setStage("configure");
+					}}
+					className={`group mb-6 flex w-full items-center gap-4 overflow-hidden rounded-xl border bg-card p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md ${template === "smart" ? "border-primary" : "border-border"}`}
+				>
+					<div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+						<Sparkles className="h-6 w-6 text-primary" />
+					</div>
+					<div className="min-w-0">
+						<div className="text-sm font-semibold">Smart Generation</div>
+						<p className="mt-0.5 text-xs text-muted-foreground">
+							The AI designs each slide's HTML and layout freely — real Chart.js charts, no fixed
+							template. Requires internet access.
+						</p>
+					</div>
+				</button>
 				<div className="mb-4 flex items-center gap-2">
 					<Sparkles className="h-4 w-4 text-muted-foreground" />
 					<h2 className="text-sm font-medium">Choose a preset template</h2>

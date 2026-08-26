@@ -951,6 +951,7 @@ async fn presenting_chat_edit(
     model: String,
     conversation_id: Option<String>,
     attachments: Option<Value>,
+    presentation_type: Option<String>,
     s: State<'_, AppState>,
 ) -> Result<Value, String> {
     let id = format!("pce-{}", next_request_id());
@@ -966,6 +967,7 @@ async fn presenting_chat_edit(
             "model":model,
             "conversationId":conversation_id,
             "attachments":attachments,
+            "presentationType":presentation_type,
         }),
         std::time::Duration::from_secs(600),
     )
@@ -1077,6 +1079,32 @@ async fn presenting_edit_slide(
             "args":args,
         }),
         std::time::Duration::from_secs(60),
+    )
+    .await
+}
+
+/// Restores one slide to a client-captured snapshot — a direct DB write, no
+/// LLM involved. Powers the chat panel's post-edit "keep original / keep
+/// edit" comparison.
+#[tauri::command]
+async fn presenting_restore_slide(
+    presentation_id: String,
+    index: i64,
+    snapshot: Value,
+    s: State<'_, AppState>,
+) -> Result<Value, String> {
+    let id = format!("prs-{}", next_request_id());
+    write_line_request(
+        &s.sidecar.stdin,
+        &s.pending_requests,
+        &serde_json::json!({
+            "type":"presenting_restore_slide",
+            "id":id,
+            "presentationId":presentation_id,
+            "index":index,
+            "snapshot":snapshot,
+        }),
+        std::time::Duration::from_secs(30),
     )
     .await
 }
@@ -1898,6 +1926,7 @@ pub fn run() {
             presenting_export_presentation,
             presenting_get_presentation,
             presenting_edit_slide,
+            presenting_restore_slide,
             presenting_import_template,
             presenting_list_imported_templates,
             presenting_delete_imported_template,

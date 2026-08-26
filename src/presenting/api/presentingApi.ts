@@ -87,6 +87,8 @@ export interface ChatEditParams {
 	provider: string;
 	model: string;
 	attachments?: Array<{ name?: string; filePath: string }>;
+	/** "standard" | "smart" — must match the presentation's stored generation_mode or the backend rejects the turn. */
+	presentation_type?: string;
 }
 
 export interface ChatEditResult {
@@ -211,6 +213,7 @@ export async function chatEdit(params: ChatEditParams): Promise<ChatEditResult> 
 		provider: params.provider,
 		model: params.model,
 		attachments: params.attachments,
+		presentationType: params.presentation_type,
 	});
 }
 
@@ -225,6 +228,27 @@ export async function editSlide(params: EditSlideParams): Promise<unknown> {
 		tool: params.tool,
 		args: params.args,
 	});
+}
+
+export interface SlideSnapshot {
+	htmlContent: string | null;
+	content: Record<string, unknown> | null;
+	ui: unknown | null;
+	speakerNote: string | null;
+}
+
+/** Restores one slide to a previously-captured snapshot — direct DB write, no LLM. Used by the chat panel's "keep original / keep edit" comparison. */
+export async function restoreSlide(
+	presentationId: string,
+	index: number,
+	snapshot: SlideSnapshot,
+): Promise<boolean> {
+	const result = await invoke<{ restored: boolean }>("presenting_restore_slide", {
+		presentationId,
+		index,
+		snapshot,
+	});
+	return result.restored;
 }
 
 // ---------------------------------------------------------------------------
