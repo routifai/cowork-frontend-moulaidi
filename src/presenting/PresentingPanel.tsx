@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
+	type GenerationProgressEvent,
 	type PresentingDeck,
 	type PresentingSlide,
 	type SmartExampleSummary,
@@ -20,6 +21,7 @@ import {
 	exportPresentation,
 	getPresentation,
 	listSmartExamples,
+	onGenerationProgress,
 	parseDocument,
 	restoreSlide,
 	saveSlideHtml,
@@ -94,6 +96,7 @@ function slideText(content: Record<string, unknown>): string {
 export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 	const [stage, setStage] = useState<Stage>("boot");
 	const [error, setError] = useState<string | null>(null);
+	const [generationProgress, setGenerationProgress] = useState<GenerationProgressEvent | null>(null);
 	const [prompt, setPrompt] = useState("");
 	const [slideCount, setSlideCount] = useState(8);
 	const [documentText, setDocumentText] = useState<string | null>(null);
@@ -191,6 +194,11 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 		}
 		setError(null);
 		setStage("generating");
+		setGenerationProgress(null);
+		// Generation is single-flight in this UI (no concurrent runs), so a
+		// plain listen/unlisten around one call is enough — no request-id
+		// correlation needed.
+		const unlisten = await onGenerationProgress(setGenerationProgress);
 		try {
 			const generated = await startGeneration({
 				content:
@@ -210,6 +218,9 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 		} catch (cause) {
 			setError(`Generation failed: ${errorMessage(cause)}`);
 			setStage("error");
+		} finally {
+			unlisten();
+			setGenerationProgress(null);
 		}
 	};
 
@@ -344,12 +355,31 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 					: stage === "generating"
 						? "Building your presentation…"
 						: "Exporting PowerPoint…";
+		const progress = stage === "generating" ? generationProgress : null;
+		const progressLabel = progress
+			? progress.status === "done"
+				? `Slide ${progress.slideIndex + 1} of ${progress.totalSlides} done`
+				: `Writing slide ${progress.slideIndex + 1} of ${progress.totalSlides}…`
+			: null;
+		const progressCompleted = progress ? (progress.status === "done" ? progress.slideIndex + 1 : progress.slideIndex) : 0;
 		return (
 			<div className="flex h-full items-center justify-center">
 				<div className="text-center">
 					<Loader2 className="mx-auto mb-3 h-6 w-6 animate-spin text-muted-foreground" />
 					<p className="text-sm font-medium">{label}</p>
-					<p className="mt-1 text-xs text-muted-foreground">This may take a few minutes.</p>
+					{progress ? (
+						<>
+							<div className="mx-auto mt-3 h-1.5 w-48 overflow-hidden rounded-full bg-muted">
+								<div
+									className="h-full rounded-full bg-primary transition-all"
+									style={{ width: `${Math.min(100, (progressCompleted / progress.totalSlides) * 100)}%` }}
+								/>
+							</div>
+							<p className="mt-2 text-xs text-muted-foreground">{progressLabel}</p>
+						</>
+					) : (
+						<p className="mt-1 text-xs text-muted-foreground">This may take a few minutes.</p>
+					)}
 				</div>
 			</div>
 		);

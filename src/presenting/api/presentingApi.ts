@@ -12,6 +12,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { type UnlistenFn, listen } from "@tauri-apps/api/event";
 
 // ---------------------------------------------------------------------------
 // Response shapes  (mirrors Python handlers' `data` payloads)
@@ -150,6 +151,23 @@ export async function parseDocument(
 // ---------------------------------------------------------------------------
 // Generation
 // ---------------------------------------------------------------------------
+
+/** Payload of the `presenting_generation_progress` global event — see smart-generation.ts's `onProgress`. */
+export interface GenerationProgressEvent {
+	slideIndex: number;
+	totalSlides: number;
+	status: "started" | "done";
+}
+
+/**
+ * Subscribes to per-slide progress during a `startGeneration()` run.
+ * Generation is a single-flight modal operation in this UI (no concurrent
+ * generations), so there's no request-id correlation here — register this
+ * right before calling `startGeneration()` and unlisten once it resolves.
+ */
+export function onGenerationProgress(callback: (event: GenerationProgressEvent) => void): Promise<UnlistenFn> {
+	return listen<GenerationProgressEvent>("presenting_generation_progress", (e) => callback(e.payload));
+}
 
 /**
  * Start a new presentation generation run. Blocking — resolves with the full

@@ -19,6 +19,7 @@ vi.mock("./api/presentingApi", () => ({
 	restoreSlide: vi.fn(),
 	listSmartExamples: vi.fn().mockResolvedValue([]),
 	saveSlideHtml: vi.fn(),
+	onGenerationProgress: vi.fn().mockResolvedValue(() => {}),
 }));
 
 const deck = {

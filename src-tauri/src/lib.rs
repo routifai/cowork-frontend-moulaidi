@@ -651,6 +651,7 @@ async fn read_stdout(
                             || kind == "agent_reload_failed"
                             || kind == "ui_request"
                             || kind == "ui_cancel"
+                            || kind == "presenting_generation_progress"
                         {
                             let _ = app.emit(kind, tag_with_session_id(e, session_id));
                         }
@@ -903,12 +904,14 @@ async fn presenting_test_relay(
     .await
 }
 
-/// Generate a full presentation: prompt + a bundled preset template name ->
-/// a filled, layout-bound slide deck. Runs several sequential model calls
-/// (outline, structure/layout selection, one per slide's content) through
-/// the relay, so this needs a generous timeout — plain request/response for
-/// v1, no intermediate progress streaming yet (see
-/// `commands/handlers/generation.py`'s doc comment).
+/// Generate a full Smart presentation: prompt -> one streamed LLM call that
+/// writes the whole deck's HTML directly (see hypatia-backend's
+/// smart-generation.ts). The *result* is still plain request/response (this
+/// call only resolves once the whole deck is ready, needing a generous
+/// timeout), but the sidecar pushes `presenting_generation_progress` events
+/// as each slide's delimiters complete in the stream — forwarded as a
+/// global Tauri event (see the `kind == "presenting_generation_progress"`
+/// branch below), not carried through this command's own return value.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 async fn presenting_start_generation(
