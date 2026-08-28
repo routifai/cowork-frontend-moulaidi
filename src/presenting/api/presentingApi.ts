@@ -152,12 +152,16 @@ export async function parseDocument(
 // Generation
 // ---------------------------------------------------------------------------
 
-/** Payload of the `presenting_generation_progress` global event — see smart-generation.ts's `onProgress`. */
-export interface GenerationProgressEvent {
-	slideIndex: number;
-	totalSlides: number;
-	status: "started" | "done";
-}
+/**
+ * Payload of the `presenting_generation_progress` global event — see
+ * smart-generation.ts's `onProgress`. Generation runs in two phases: one
+ * outline call (plans every slide + a shared design brief), then N slide
+ * calls running concurrently — "slide" events can arrive out of order
+ * (whichever slide's model call finishes first), not sequentially by index.
+ */
+export type GenerationProgressEvent =
+	| { phase: "outline"; status: "started" | "done" }
+	| { phase: "slide"; slideIndex: number; totalSlides: number; status: "started" | "done" };
 
 /**
  * Subscribes to per-slide progress during a `startGeneration()` run.

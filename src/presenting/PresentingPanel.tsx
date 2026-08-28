@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
-	type GenerationProgressEvent,
 	type PresentingDeck,
 	type PresentingSlide,
 	type SmartExampleSummary,
@@ -96,7 +95,15 @@ function slideText(content: Record<string, unknown>): string {
 export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 	const [stage, setStage] = useState<Stage>("boot");
 	const [error, setError] = useState<string | null>(null);
-	const [generationProgress, setGenerationProgress] = useState<GenerationProgressEvent | null>(null);
+	// Slides now generate concurrently and can finish out of order, so this
+	// tracks accumulated progress (outline done? how many of N slides done?)
+	// rather than just the latest raw event — a single "last event" wouldn't
+	// render sensibly once completion order stops matching slide index order.
+	const [generationProgress, setGenerationProgress] = useState<{
+		outlineDone: boolean;
+		totalSlides: number | null;
+		completedSlides: number;
+	} | null>(null);
 	const [prompt, setPrompt] = useState("");
 	const [slideCount, setSlideCount] = useState(8);
 	const [documentText, setDocumentText] = useState<string | null>(null);
@@ -194,11 +201,23 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 		}
 		setError(null);
 		setStage("generating");
-		setGenerationProgress(null);
+		setGenerationProgress({ outlineDone: false, totalSlides: null, completedSlides: 0 });
 		// Generation is single-flight in this UI (no concurrent runs), so a
 		// plain listen/unlisten around one call is enough — no request-id
 		// correlation needed.
-		const unlisten = await onGenerationProgress(setGenerationProgress);
+		const unlisten = await onGenerationProgress((event) => {
+			setGenerationProgress((prev) => {
+				const base = prev ?? { outlineDone: false, totalSlides: null, completedSlides: 0 };
+				if (event.phase === "outline") {
+					return { ...base, outlineDone: event.status === "done" };
+				}
+				return {
+					...base,
+					totalSlides: event.totalSlides,
+					completedSlides: event.status === "done" ? base.completedSlides + 1 : base.completedSlides,
+				};
+			});
+		});
 		try {
 			const generated = await startGeneration({
 				content:
@@ -355,13 +374,19 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 					: stage === "generating"
 						? "Building your presentation…"
 						: "Exporting PowerPoint…";
+		// Slides now generate concurrently, so "slide N of M" (implying a fixed
+		// current slide) no longer applies once totalSlides is known — show a
+		// completed-count fraction instead, which stays meaningful regardless
+		// of which slide finishes first.
 		const progress = stage === "generating" ? generationProgress : null;
 		const progressLabel = progress
-			? progress.status === "done"
-				? `Slide ${progress.slideIndex + 1} of ${progress.totalSlides} done`
-				: `Writing slide ${progress.slideIndex + 1} of ${progress.totalSlides}…`
+			? !progress.outlineDone
+				? "Planning your presentation…"
+				: progress.totalSlides === null
+					? "Starting slide generation…"
+					: `${progress.completedSlides} of ${progress.totalSlides} slides done`
 			: null;
-		const progressCompleted = progress ? (progress.status === "done" ? progress.slideIndex + 1 : progress.slideIndex) : 0;
+		const progressPercent = progress?.totalSlides ? Math.min(100, (progress.completedSlides / progress.totalSlides) * 100) : progress?.outlineDone ? 0 : 5;
 		return (
 			<div className="flex h-full items-center justify-center">
 				<div className="text-center">
@@ -370,10 +395,7 @@ export function PresentingPanel({ provider, model }: PresentingPanelProps) {
 					{progress ? (
 						<>
 							<div className="mx-auto mt-3 h-1.5 w-48 overflow-hidden rounded-full bg-muted">
-								<div
-									className="h-full rounded-full bg-primary transition-all"
-									style={{ width: `${Math.min(100, (progressCompleted / progress.totalSlides) * 100)}%` }}
-								/>
+								<div className="h-full rounded-full bg-primary transition-all" style={{ width: `${progressPercent}%` }} />
 							</div>
 							<p className="mt-2 text-xs text-muted-foreground">{progressLabel}</p>
 						</>
