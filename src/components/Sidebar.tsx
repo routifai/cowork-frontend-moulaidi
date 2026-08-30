@@ -1,4 +1,6 @@
-import { Presentation, Settings } from "lucide-react";
+import { isMacOS } from "@/lib/utils";
+import { formatElapsed } from "@/meetings/MeetingsPanel";
+import { Mic, Presentation, Settings } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { ConversationSearch, type DeepSearchMatch } from "./ConversationSearch";
 
@@ -35,6 +37,10 @@ interface SidebarProps {
 	homeDir?: string;
 	/** The agent's current workspace folder — its session group sorts first. */
 	activeWorkspace?: string;
+	/** A meeting recording is in progress — shows a live badge even while off the Meetings view. */
+	isRecordingMeeting?: boolean;
+	/** Seconds elapsed in the current recording, for the badge. */
+	meetingElapsed?: number;
 }
 
 // ease-out-expo
@@ -53,6 +59,8 @@ export function Sidebar({
 	onChangeView,
 	homeDir,
 	activeWorkspace,
+	isRecordingMeeting,
+	meetingElapsed = 0,
 }: SidebarProps) {
 	const reduced = useReducedMotion();
 
@@ -115,6 +123,41 @@ export function Sidebar({
 					<Presentation className="w-3.5 h-3.5 shrink-0" />
 					PowerPoint Builder
 				</motion.button>
+				{isMacOS() && (
+					<motion.button
+						type="button"
+						onClick={() => onChangeView("meetings")}
+						className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] transition-colors"
+						style={{
+							color: isRecordingMeeting
+								? "hsl(var(--destructive))"
+								: "hsl(var(--sidebar-foreground) / 0.45)",
+						}}
+						whileHover={
+							reduced
+								? {}
+								: {
+										color: isRecordingMeeting
+											? "hsl(var(--destructive))"
+											: "hsl(var(--sidebar-foreground))",
+										background: "hsl(var(--sidebar-accent) / 0.5)",
+									}
+						}
+						whileTap={reduced ? {} : { scale: 0.97 }}
+						transition={{ duration: 0.15, ease: easeOutExpo }}
+					>
+						{isRecordingMeeting ? (
+							<motion.span
+								className="w-2 h-2 rounded-full bg-current shrink-0"
+								animate={reduced ? {} : { opacity: [1, 0.35, 1] }}
+								transition={{ duration: 1.4, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" }}
+							/>
+						) : (
+							<Mic className="w-3.5 h-3.5 shrink-0" />
+						)}
+						{isRecordingMeeting ? `Recording — ${formatElapsed(meetingElapsed)}` : "Record Meeting"}
+					</motion.button>
+				)}
 				<motion.button
 					type="button"
 					onClick={() => onChangeView("settings")}

@@ -3,6 +3,8 @@
 //! A thin relay between the React frontend and the Node.js agent sidecar.
 
 mod analytics;
+#[cfg(target_os = "macos")]
+mod meeting;
 
 use serde_json::Value;
 use std::collections::HashMap;
@@ -60,6 +62,8 @@ struct AppState {
     pending_prompts: Arc<Mutex<HashMap<String, PendingPrompt>>>,
     pending_requests: Arc<Mutex<HashMap<String, PendingRequest>>>,
     // presenting: PresentingState — removed Phase 7; Python engine is gone
+    #[cfg(target_os = "macos")]
+    meeting: meeting::MeetingState,
 }
 
 /// Strip the Windows `\\?\` extended-length path prefix.
@@ -652,6 +656,7 @@ async fn read_stdout(
                             || kind == "ui_request"
                             || kind == "ui_cancel"
                             || kind == "presenting_generation_progress"
+                            || kind == "meeting_transcript"
                         {
                             let _ = app.emit(kind, tag_with_session_id(e, session_id));
                         }
@@ -1931,6 +1936,20 @@ pub fn run() {
             crate::analytics::flush_analytics,
             set_telemetry_enabled,
             get_install_context,
+            #[cfg(target_os = "macos")]
+            meeting::start_meeting_recording,
+            #[cfg(target_os = "macos")]
+            meeting::stop_meeting_recording,
+            #[cfg(target_os = "macos")]
+            meeting::save_meeting,
+            #[cfg(target_os = "macos")]
+            meeting::summarize_meeting,
+            #[cfg(target_os = "macos")]
+            meeting::list_meetings,
+            #[cfg(target_os = "macos")]
+            meeting::get_meeting,
+            #[cfg(target_os = "macos")]
+            meeting::delete_meeting,
         ])
         .run(tauri::generate_context!())
         .expect("error running tauri");

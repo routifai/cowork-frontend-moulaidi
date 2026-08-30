@@ -13,6 +13,7 @@ import {
 	useState,
 } from "react";
 import { CommandPalette, useFilteredCommands } from "./CommandPalette";
+import { McpConnectorsMenu } from "./McpConnectorsMenu";
 import { ModelSelector } from "./ModelSelector";
 
 /** Split a raw composer value starting with `/` into command query + args. */
@@ -89,6 +90,8 @@ interface MessageInputProps {
 	planModeStatus?: string;
 	/** Sends a plan-mode command silently (no visible chat bubble) — see {@link planModeButtonConfig}. */
 	onPlanModeAction?: (command: string) => void;
+	/** Active session id — scopes the MCP connectors toggle (see McpConnectorsMenu). */
+	sessionId?: string;
 }
 
 export interface MessageInputHandle {
@@ -180,6 +183,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 			onEditQueue,
 			planModeStatus,
 			onPlanModeAction,
+			sessionId,
 		},
 		ref,
 	) => {
@@ -583,6 +587,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(
 									{modelLabel || "Hypatia"}
 								</span>
 							)}
+							{sessionId ? <McpConnectorsMenu sessionId={sessionId} disabled={disabled} /> : null}
 							{(() => {
 								const plan = planModeButtonConfig(planModeStatus);
 								return (

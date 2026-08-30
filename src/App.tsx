@@ -22,6 +22,8 @@ import {
 } from "@/lib/builtinCommands";
 import { findModel, modelKey } from "@/lib/model-key";
 import { trackEvent } from "@/lib/telemetry";
+import { MeetingsPanel } from "@/meetings/MeetingsPanel";
+import { useMeetingRecording } from "@/meetings/useMeetingRecording";
 import { PlaygroundPanel, PlaygroundReopenTab } from "@/playground/PlaygroundPanel";
 import { PresentingPanel } from "@/presenting/PresentingPanel";
 import type { ChatMessage } from "@/types";
@@ -97,9 +99,14 @@ function App() {
 		setSidebarView(view);
 		setShowSettings(view === "settings");
 		setShowPresenting(view === "presenting");
+		setShowMeetings(view === "meetings");
 	}, []);
 	const [showSettings, setShowSettings] = useState(false);
 	const [showPresenting, setShowPresenting] = useState(false);
+	const [showMeetings, setShowMeetings] = useState(false);
+	// Lifted here (not inside MeetingsPanel) so recording survives switching to
+	// a chat session and back — see useMeetingRecording's doc comment.
+	const meetingRecording = useMeetingRecording();
 	const [showModelSelector, setShowModelSelector] = useState(false);
 	const [showHelp, setShowHelp] = useState(false);
 	// Playground panel: user can dismiss it, but each new turn gets a fresh
@@ -859,6 +866,8 @@ function App() {
 							onPinSession={handlePinSession}
 							onDeepSearch={handleDeepSearch}
 							onChangeView={handleChangeView}
+							isRecordingMeeting={meetingRecording.recording}
+							meetingElapsed={meetingRecording.elapsed}
 						/>
 					</div>
 				</>
@@ -879,9 +888,11 @@ function App() {
 									? "settings"
 									: showPresenting
 										? "presenting"
-										: loadingSession
-											? "loading"
-											: "chat"
+										: showMeetings
+											? "meetings"
+											: loadingSession
+												? "loading"
+												: "chat"
 						}
 						className="flex-1 flex flex-col min-h-0 animate-fade-in"
 					>
@@ -896,6 +907,14 @@ function App() {
 							/>
 						) : showPresenting ? (
 							<PresentingPanel provider={presentingModel?.provider} model={presentingModel?.id} />
+						) : showMeetings ? (
+							<MeetingsPanel
+								{...meetingRecording}
+								onClose={() => {
+									setShowMeetings(false);
+									setSidebarView("chats");
+								}}
+							/>
 						) : loadingSession ? (
 							<div className="flex-1 flex flex-col items-center justify-center gap-4">
 								<div className="w-8 h-8 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
@@ -939,6 +958,7 @@ function App() {
 										commands={BUILTIN_COMMANDS}
 										onRunCommand={handleRunCommand}
 										onOpenArtifact={handleOpenArtifact}
+										sessionId={activeSessionFile || undefined}
 									/>
 								</div>
 								{playgroundClosed ? (

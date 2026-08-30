@@ -1,5 +1,12 @@
 [workspace]
-members = ["src-tauri"]
+members = [
+    "src-tauri",
+    "src-tauri/crates/anlg-audio",
+    "src-tauri/crates/anlg-audio-interface",
+    "src-tauri/crates/anlg-audio-utils",
+    "src-tauri/crates/anlg-resampler",
+    "src-tauri/crates/anlg-audio-actual",
+]
 resolver = "2"
 
 [workspace.package]

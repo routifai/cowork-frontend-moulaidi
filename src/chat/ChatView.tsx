@@ -53,6 +53,10 @@ interface ChatViewProps {
 	 * (see `PlanModeQuestionCard.tsx`) instead of `App.tsx`'s popup. */
 	planQuestionRequest?: ExtensionUiRequest;
 	onRespondPlanQuestion?: (response: ExtensionUiResponse) => void;
+	/** Active session id (pi session file path) — lets the composer scope its
+	 * MCP connector toggle to this session. Undefined for a not-yet-persisted
+	 * new session (no connector toggling until a session actually exists). */
+	sessionId?: string;
 }
 
 export function ChatView({
@@ -81,6 +85,7 @@ export function ChatView({
 	onPlanModeAction,
 	planQuestionRequest,
 	onRespondPlanQuestion,
+	sessionId,
 }: ChatViewProps) {
 	const scrollContainerRef = useRef<HTMLDivElement>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -414,6 +419,7 @@ export function ChatView({
 					draft={draft}
 					commands={commands}
 					onRunCommand={onRunCommand}
+					sessionId={sessionId}
 				/>
 			</motion.div>
 

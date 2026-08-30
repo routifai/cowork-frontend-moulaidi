@@ -5,22 +5,33 @@ import {
 	FolderCog,
 	Info,
 	MessageSquare,
+	Mic,
 	Palette,
+	Plug,
 } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { FeedbackDialog } from "./FeedbackDialog";
 import { About } from "./settings/About";
 import { Appearance } from "./settings/Appearance";
+import { Connectors } from "./settings/Connectors";
 import { Instructions } from "./settings/Instructions";
 import { MemorySettings } from "./settings/MemorySettings";
+import { Transcription } from "./settings/Transcription";
 import { Workspace } from "./settings/Workspace";
 
 interface SettingsPageProps {
 	onClose: () => void;
 }
 
-type SectionId = "custom-instructions" | "appearance" | "workspace" | "memory" | "about";
+type SectionId =
+	| "custom-instructions"
+	| "appearance"
+	| "workspace"
+	| "memory"
+	| "connectors"
+	| "transcription"
+	| "about";
 
 type Section = {
 	id: SectionId;
@@ -36,6 +47,8 @@ const GROUPS: { label: string; items: Section[] }[] = [
 			{ id: "appearance", label: "Appearance", Icon: Palette },
 			{ id: "workspace", label: "Workspace", Icon: FolderCog },
 			{ id: "memory", label: "Memory", Icon: BrainCircuit },
+			{ id: "connectors", label: "My Connectors", Icon: Plug },
+			{ id: "transcription", label: "Transcription", Icon: Mic },
 		],
 	},
 	{
@@ -257,6 +270,8 @@ function SectionContent({ activeSection }: { activeSection: SectionId }) {
 			{activeSection === "appearance" && <Appearance />}
 			{activeSection === "workspace" && <Workspace />}
 			{activeSection === "memory" && <MemorySettings />}
+			{activeSection === "connectors" && <Connectors />}
+			{activeSection === "transcription" && <Transcription />}
 			{activeSection === "about" && <About />}
 		</>
 	);

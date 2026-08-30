@@ -1376,3 +1376,753 @@ body[data-wallpaper]::before {
 		animation: none !important;
 	}
 }
+
+/* ── Record Meeting: "listening" orb ──
+   Royal-Gloss-style blue/white blob (CSS approximation of OrbPresence.ts's
+   WebGL orb, same brand colors) as the hero for the recording state, plus
+   the surrounding hero/transcript/control chrome. See design concept:
+   https://claude.ai/code/artifact/65d8d6c3-c44d-4894-ad67-53bf3b2cf7f3 */
+.meetings-main {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	overflow: hidden;
+}
+.meetings-main-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 20px 26px 6px;
+	flex-shrink: 0;
+	gap: 12px;
+}
+.meetings-main-title {
+	font-size: 14px;
+	font-weight: 600;
+}
+.meetings-main-sub {
+	font-size: 11.5px;
+	color: hsl(var(--muted-foreground) / 0.75);
+	margin-top: 2px;
+}
+.meetings-main-head-right {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.provider-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 10px;
+	border-radius: 999px;
+	font-size: 10.5px;
+	font-weight: 500;
+	background: hsl(var(--brand) / 0.08);
+	color: hsl(var(--brand));
+	white-space: nowrap;
+}
+.template-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 4px 10px;
+	border-radius: 999px;
+	font-size: 10.5px;
+	font-weight: 500;
+	background: hsl(var(--brand) / 0.08);
+	color: hsl(var(--brand));
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+.template-badge.lg {
+	font-size: 11.5px;
+	padding: 5px 12px;
+}
+.btn-close {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	border-radius: 999px;
+	border: 1px solid hsl(var(--elev-border) / 0.8);
+	background: hsl(var(--elev-bg) / 0.5);
+	color: hsl(var(--muted-foreground));
+	cursor: pointer;
+	flex-shrink: 0;
+}
+.btn-close:hover {
+	color: hsl(var(--foreground));
+	background: hsl(var(--muted) / 0.6);
+}
+.back-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11.5px;
+	font-weight: 500;
+	color: hsl(var(--muted-foreground) / 0.85);
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 4px 2px;
+}
+.back-link:hover {
+	color: hsl(var(--foreground));
+}
+.back-link svg {
+	width: 13px;
+	height: 13px;
+}
+.btn-adhoc {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 14px;
+	border-radius: 999px;
+	font-size: 11.5px;
+	font-weight: 600;
+	color: hsl(var(--brand));
+	background: hsl(var(--brand) / 0.08);
+	border: 1px solid hsl(var(--brand) / 0.18);
+	cursor: pointer;
+}
+.btn-adhoc:hover {
+	background: hsl(var(--brand) / 0.13);
+}
+
+/* ── Ad hoc meeting: name it before recording (not every meeting is on the calendar) ── */
+.name-body {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 20px 40px 40px;
+	min-height: 0;
+}
+.name-card {
+	width: 420px;
+	max-width: 100%;
+	padding: 26px 26px 22px;
+}
+.name-input {
+	width: 100%;
+	margin-top: 18px;
+	padding: 11px 14px;
+	border-radius: 10px;
+	border: 1px solid hsl(var(--elev-border));
+	background: hsl(var(--elev-bg) / 0.7);
+	font: inherit;
+	font-size: 13px;
+	color: hsl(var(--foreground));
+}
+.name-input:focus {
+	outline: none;
+	border-color: hsl(var(--brand) / 0.5);
+}
+.name-actions {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 10px;
+	margin-top: 20px;
+}
+.btn-text {
+	background: none;
+	border: none;
+	font-size: 12.5px;
+	font-weight: 500;
+	color: hsl(var(--muted-foreground));
+	cursor: pointer;
+	padding: 8px 6px;
+}
+.btn-text:hover {
+	color: hsl(var(--foreground));
+}
+
+/* ── Meetings agenda: today's calendar-sourced sessions ── */
+.agenda-scroll {
+	flex: 1;
+	overflow-y: auto;
+	padding: 14px 26px 26px;
+}
+.agenda-section {
+	margin-bottom: 26px;
+}
+.agenda-section:last-child {
+	margin-bottom: 0;
+}
+.agenda-section-label {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: hsl(var(--muted-foreground) / 0.65);
+	margin-bottom: 10px;
+}
+.live-card {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 18px 20px;
+	border-radius: 16px;
+	border: 1px solid hsl(var(--brand) / 0.22);
+	background: hsl(var(--brand) / 0.06);
+	cursor: pointer;
+	text-align: left;
+}
+.live-card:hover {
+	background: hsl(var(--brand) / 0.09);
+}
+.live-card-left {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	min-width: 0;
+}
+.live-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: hsl(var(--destructive));
+	flex-shrink: 0;
+	animation: dot-pulse 1.6s ease-in-out infinite;
+}
+.live-card-title {
+	font-size: 14px;
+	font-weight: 600;
+}
+.live-card-meta {
+	font-size: 11.5px;
+	color: hsl(var(--muted-foreground) / 0.75);
+	margin-top: 3px;
+}
+.record-pill {
+	flex-shrink: 0;
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 18px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	color: white;
+	background: linear-gradient(180deg, hsl(var(--brand-2)) 0%, hsl(var(--brand)) 100%);
+	box-shadow: 0 8px 20px -8px hsl(var(--brand) / 0.55);
+}
+.record-pill svg {
+	width: 13px;
+	height: 13px;
+}
+.upcoming-row {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 11px 10px;
+	opacity: 0.62;
+}
+.upcoming-time {
+	width: 76px;
+	flex-shrink: 0;
+	font-family: var(--font-mono);
+	font-size: 11.5px;
+	color: hsl(var(--muted-foreground));
+}
+.upcoming-title {
+	flex: 1;
+	font-size: 12.5px;
+	font-weight: 500;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.upcoming-meta {
+	font-size: 11px;
+	color: hsl(var(--muted-foreground) / 0.75);
+	flex-shrink: 0;
+}
+.upcoming-badge {
+	flex-shrink: 0;
+	font-size: 10px;
+	font-weight: 500;
+	color: hsl(var(--muted-foreground) / 0.7);
+	padding: 3px 9px;
+	border-radius: 999px;
+	border: 1px solid hsl(var(--elev-border));
+}
+.past-row {
+	width: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 12px 10px;
+	border-radius: 12px;
+	cursor: pointer;
+	text-align: left;
+	background: transparent;
+	border: none;
+	color: inherit;
+	font: inherit;
+}
+.past-row:hover {
+	background: hsl(var(--brand) / 0.06);
+}
+.past-row-title {
+	font-size: 12.5px;
+	font-weight: 500;
+}
+.past-row-meta {
+	font-size: 11px;
+	color: hsl(var(--muted-foreground) / 0.7);
+	margin-top: 2px;
+}
+.past-row-right {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-shrink: 0;
+}
+.past-row-right svg {
+	width: 14px;
+	height: 14px;
+	color: hsl(var(--muted-foreground) / 0.5);
+}
+.agenda-empty {
+	font-size: 12px;
+	color: hsl(var(--muted-foreground) / 0.6);
+	padding: 6px 10px;
+}
+
+.meetings-hero {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 22px;
+	padding: 20px 40px;
+	min-height: 0;
+}
+
+.orb-wrap {
+	position: relative;
+	width: 200px;
+	height: 200px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+.orb-ring {
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	border: 1px solid hsl(var(--brand-2) / 0.25);
+	opacity: 0;
+}
+.orb-ring.r2 {
+	inset: -22px;
+	border-color: hsl(var(--brand-2) / 0.16);
+}
+.orb-ring.r3 {
+	inset: -46px;
+	border-color: hsl(var(--brand-2) / 0.09);
+}
+.orb {
+	position: relative;
+	width: 150px;
+	height: 150px;
+	border-radius: 50%;
+	background: radial-gradient(circle at 32% 26%, hsl(0 0% 100% / 0.95) 0%, transparent 30%),
+		radial-gradient(circle at 66% 70%, hsl(var(--brand-2) / 0.65) 0%, transparent 52%),
+		radial-gradient(
+			circle at 50% 50%,
+			hsl(212 100% 46%) 0%,
+			hsl(222 88% 32%) 58%,
+			hsl(232 70% 16%) 100%
+		);
+	box-shadow: inset 0 -22px 40px hsl(230 60% 8% / 0.45), inset 0 20px 34px hsl(0 0% 100% / 0.35), 0
+		0 0 1px hsl(0 0% 100% / 0.06);
+	animation: orb-breathe 5s ease-in-out infinite;
+}
+.orb::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	background: conic-gradient(
+		from 200deg at 50% 50%,
+		transparent 0deg,
+		hsl(0 0% 100% / 0.35) 40deg,
+		transparent 90deg,
+		transparent 360deg
+	);
+	mix-blend-mode: screen;
+	animation: orb-sheen 7s linear infinite;
+}
+.orb-glow {
+	position: absolute;
+	inset: -30px;
+	border-radius: 50%;
+	background: radial-gradient(circle, hsl(var(--brand-2) / 0.32) 0%, transparent 70%);
+	filter: blur(18px);
+	z-index: -1;
+	animation: orb-breathe 5s ease-in-out infinite;
+}
+@keyframes orb-breathe {
+	0%,
+	100% {
+		transform: scale(1);
+	}
+	50% {
+		transform: scale(1.045);
+	}
+}
+@keyframes orb-sheen {
+	0% {
+		transform: rotate(0deg);
+	}
+	100% {
+		transform: rotate(360deg);
+	}
+}
+@keyframes ring-pulse {
+	0% {
+		transform: scale(0.94);
+		opacity: 0.55;
+	}
+	100% {
+		transform: scale(1.22);
+		opacity: 0;
+	}
+}
+.meetings-hero.is-listening .orb-wrap {
+	width: 96px;
+	height: 96px;
+}
+.meetings-hero.is-listening .orb {
+	width: 96px;
+	height: 96px;
+	animation-duration: 2.6s;
+}
+.meetings-hero.is-listening .orb-glow {
+	inset: -16px;
+	animation-duration: 2.6s;
+}
+.meetings-hero.is-listening .orb-ring.r2 {
+	inset: -12px;
+}
+.meetings-hero.is-listening .orb-ring.r3 {
+	inset: -24px;
+}
+.meetings-hero.is-listening .orb-ring {
+	animation: ring-pulse 2.6s ease-out infinite;
+}
+.meetings-hero.is-listening .orb-ring.r2 {
+	animation-delay: 0.5s;
+}
+.meetings-hero.is-listening .orb-ring.r3 {
+	animation-delay: 1s;
+}
+
+/* ── Recording: dual waveform ("who's talking") ──
+   Decorative for now — a looping bounce, not wired to real per-channel
+   amplitude yet (that needs the Rust capture loop to emit levels). */
+.waveform-row {
+	display: flex;
+	align-items: center;
+	gap: 28px;
+}
+.waveform-group {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+}
+.waveform-label {
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: hsl(var(--muted-foreground) / 0.65);
+}
+.waveform-bars {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	height: 28px;
+}
+.wave-bar {
+	width: 3px;
+	border-radius: 2px;
+	background: hsl(var(--brand));
+	animation: wave-bounce 1.1s ease-in-out infinite;
+}
+.waveform-group.speaker .wave-bar {
+	background: hsl(var(--brand-2));
+}
+@keyframes wave-bounce {
+	0%,
+	100% {
+		height: 20%;
+	}
+	50% {
+		height: 100%;
+	}
+}
+
+/* ── Recording: lyrics-style floating transcript ──
+   Newest line centered/bold; older lines drift up, shrink and fade —
+   position/opacity computed per-line in MeetingsPanel.tsx and animated by
+   this transition (not a CSS keyframe loop — driven by real transcript
+   state, not a fixed clock). */
+.lyrics-stack {
+	position: relative;
+	width: 720px;
+	max-width: 100%;
+	height: 220px;
+	overflow: hidden;
+	flex-shrink: 0;
+	-webkit-mask-image: linear-gradient(
+		to bottom,
+		transparent 0%,
+		black 20%,
+		black 78%,
+		transparent 100%
+	);
+	mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 78%, transparent 100%);
+}
+.lyric-line {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	width: 660px;
+	max-width: 100%;
+	text-align: center;
+	font-size: 20px;
+	font-weight: 600;
+	line-height: 1.5;
+	color: hsl(var(--foreground));
+	transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.6s ease;
+}
+.lyrics-empty {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 12.5px;
+	color: hsl(var(--muted-foreground) / 0.6);
+}
+
+.btn-end {
+	display: inline-flex;
+	align-items: center;
+	gap: 9px;
+	padding: 12px 28px;
+	border-radius: 999px;
+	font-size: 13px;
+	font-weight: 600;
+	background: hsl(var(--destructive));
+	color: white;
+	box-shadow: 0 8px 24px -8px hsl(var(--destructive) / 0.55);
+	border: none;
+	cursor: pointer;
+}
+
+.meetings-state-label {
+	font-size: 13px;
+	font-weight: 500;
+	color: hsl(var(--foreground) / 0.8);
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.meetings-state-dot {
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: hsl(var(--destructive));
+}
+.meetings-hero.is-listening .meetings-state-dot {
+	animation: dot-pulse 1.4s ease-in-out infinite;
+}
+@keyframes dot-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.35;
+	}
+}
+.meetings-state-hint {
+	font-size: 11.5px;
+	color: hsl(var(--muted-foreground) / 0.7);
+}
+
+.meetings-controls {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-top: 4px;
+	flex-shrink: 0;
+}
+.btn-record {
+	display: inline-flex;
+	align-items: center;
+	gap: 9px;
+	padding: 12px 26px;
+	border-radius: 999px;
+	font-size: 13px;
+	font-weight: 600;
+	border: none;
+	cursor: pointer;
+	color: white;
+	background: linear-gradient(180deg, hsl(var(--brand-2)) 0%, hsl(var(--brand)) 100%);
+	box-shadow: 0 8px 24px -8px hsl(var(--brand) / 0.55), inset 0 1px 0 hsl(0 0% 100% / 0.25);
+}
+.btn-record:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+
+/* ── Post-recording: choose a summary template ── */
+.template-body {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 24px;
+	padding: 10px 40px 40px;
+	min-height: 0;
+}
+.template-intro {
+	font-size: 13px;
+	color: hsl(var(--muted-foreground) / 0.85);
+}
+.template-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 12px;
+	width: 640px;
+	max-width: 100%;
+}
+.template-card {
+	position: relative;
+	text-align: left;
+	padding: 16px 18px;
+	border-radius: 14px;
+	border: 1px solid hsl(var(--elev-border));
+	background: hsl(var(--elev-bg) / 0.5);
+	cursor: pointer;
+}
+.template-card:hover {
+	border-color: hsl(var(--brand) / 0.35);
+}
+.template-card.is-selected {
+	border-color: hsl(var(--brand));
+	background: hsl(var(--brand) / 0.06);
+}
+.template-card-name {
+	font-size: 13px;
+	font-weight: 600;
+	padding-right: 20px;
+}
+.template-card-desc {
+	font-size: 11.5px;
+	color: hsl(var(--muted-foreground) / 0.8);
+	margin-top: 5px;
+	line-height: 1.5;
+}
+.template-card-check {
+	position: absolute;
+	top: 16px;
+	right: 16px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: hsl(var(--brand));
+	color: white;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.btn-generate {
+	display: inline-flex;
+	align-items: center;
+	gap: 9px;
+	padding: 12px 26px;
+	border-radius: 999px;
+	font-size: 13px;
+	font-weight: 600;
+	border: none;
+	cursor: pointer;
+	color: white;
+	background: linear-gradient(180deg, hsl(var(--brand-2)) 0%, hsl(var(--brand)) 100%);
+	box-shadow: 0 8px 24px -8px hsl(var(--brand) / 0.55);
+}
+.btn-generate:disabled {
+	opacity: 0.6;
+	cursor: default;
+}
+
+/* ── Past meeting detail: summary + transcript ── */
+.detail-scroll {
+	flex: 1;
+	overflow-y: auto;
+	padding: 6px 26px 30px;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+.detail-title-row {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 6px 2px 2px;
+}
+.detail-title {
+	font-size: 17px;
+	font-weight: 600;
+}
+.detail-meta {
+	font-size: 11.5px;
+	color: hsl(var(--muted-foreground) / 0.75);
+	margin-top: 4px;
+}
+.detail-card {
+	padding: 20px 22px;
+}
+.detail-card-label {
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: hsl(var(--muted-foreground) / 0.6);
+	margin-bottom: 12px;
+}
+.detail-summary-empty {
+	font-size: 12.5px;
+	color: hsl(var(--muted-foreground) / 0.65);
+}
+.transcript-lines {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+.transcript-line {
+	margin: 0;
+	font-size: 12.5px;
+	line-height: 1.65;
+	color: hsl(var(--foreground) / 0.82);
+	white-space: pre-wrap;
+}

@@ -1,0 +1,8 @@
+[package]
+name = "anlg-audio"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures-util = "0.3.31"
+thiserror = "2"

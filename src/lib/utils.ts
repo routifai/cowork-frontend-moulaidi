@@ -86,3 +86,13 @@ export async function openExternalUrl(url: string): Promise<void> {
 export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }
+
+/**
+ * Whether the app is running on macOS — used to gate the "Record Meeting"
+ * feature (native Core Audio process-tap for system audio, no Windows/Linux
+ * equivalent vendored). No Tauri plugin needed: `navigator.userAgent` is
+ * populated identically in the Tauri webview and in browser dev mode.
+ */
+export function isMacOS(): boolean {
+	return typeof navigator !== "undefined" && /Mac/i.test(navigator.userAgent);
+}
